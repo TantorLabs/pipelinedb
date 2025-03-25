@@ -1,0 +1,77 @@
+#! /usr/bin/env python2
+
+import argparse
+import os
+import shutil
+import subprocess
+import time
+import getpass
+import signal
+import sys
+
+
+def main(args):
+    if args.root is None:
+      p = subprocess.Popen(['pg_config', '--bindir'], stdout=subprocess.PIPE)
+      out, _ = p.communicate()
+      if p.returncode == 0:
+        args.root = os.path.abspath(os.path.join(out.strip(), '..'))
+
+    root = os.path.expandvars(args.root)
+    if not os.path.exists(root):
+        print 'Root directory %s does not exist. Did you run `make install`?' % root
+        sys.exit(1)
+
+    root = os.path.expanduser(root)
+    data_dir = os.path.join(root, 'data')
+
+    os.path.exists(data_dir) and shutil.rmtree(data_dir)
+    try:
+        subprocess.call(['initdb', '-D', data_dir])
+    except OSError:
+        print 'Looks like you forgot to add your PATH? Run the next line and `make bootstrap` again'
+        print '    export PATH=%s/bin:$PATH' % root
+        sys.exit(1)
+
+    proc = subprocess.Popen(['postgres', '-D', data_dir, '-c', 'log_line_prefix='])
+    time.sleep(1)
+
+    # This is only required for 'make installcheck'. Before running tests,
+    # pg_regress wants to do 'DROP DATABASE contrib_regression' when connected to
+    # the 'postgres' database. With PipelineDB that only works when the background
+    # workers associated with the 'contrib_regression" database are killed first.
+    # Otherwise PostgreSQL would either prevent 'DROP DATABASE' or (when FORCEd)
+    # will result in PipelineDB periodically complaining in the error log about
+    # background workers not finding a database, which is annoying. Killing the
+    # corresponding background workers before dropping the database works only if
+    # the extension is installed in the 'postres' database as well, so the 'DROP
+    # DATABASE' command is intercepted with a utility hook and
+    # SignalContQuerySchedulerDropDB() is called for 'contrib_regression'.
+    subprocess.Popen(['psql', '-c',
+                      'CREATE EXTENSION IF NOT EXISTS pipelinedb', 'postgres'],
+                     stdout=subprocess.PIPE)
+
+    user = getpass.getuser()
+    try:
+      subprocess.check_call(['psql', 'postgres', '-c',
+                             'CREATE DATABASE %s' % user])
+    except subprocess.CalledProcessError:
+      print 'It seems like PostgreSQL failed to start up. Make sure nothing else is running on port 5432, maybe you have an instance of PostgreSQL already running?'
+      sys.exit(1)
+
+    subprocess.call(['psql', user, '-c', 'CREATE EXTENSION pipelinedb'])
+    time.sleep(0.1)
+
+    # Cleanup daemons
+    os.kill(proc.pid, signal.SIGINT)
+    time.sleep(0.1)
+
+    print """\nPipelineDB successfully bootstrapped.
+Run with `make run`.'"""
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--root', action='store', dest='root', help='Root directory in which to create the database')
+    args = parser.parse_args()
+    main(args)

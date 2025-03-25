@@ -1,0 +1,238 @@
+\d+ pipelinedb.cont_query
+                                      Table "pipelinedb.cont_query"
+       Column        |   Type   | Collation | Nullable | Default | Storage  | Stats target | Description 
+---------------------+----------+-----------+----------+---------+----------+--------------+-------------
+ id                  | integer  |           | not null |         | plain    |              | 
+ type                | "char"   |           |          |         | plain    |              | 
+ relid               | oid      |           | not null |         | plain    |              | 
+ defrelid            | oid      |           | not null |         | plain    |              | 
+ active              | boolean  |           |          |         | plain    |              | 
+ osrelid             | oid      |           |          |         | plain    |              | 
+ streamrelid         | oid      |           |          |         | plain    |              | 
+ matrelid            | oid      |           | not null |         | plain    |              | 
+ seqrelid            | oid      |           |          |         | plain    |              | 
+ pkidxid             | oid      |           |          |         | plain    |              | 
+ lookupidxid         | oid      |           |          |         | plain    |              | 
+ step_factor         | smallint |           |          |         | plain    |              | 
+ ttl                 | integer  |           |          |         | plain    |              | 
+ ttl_attno           | smallint |           |          |         | plain    |              | 
+ tgnargs             | smallint |           |          |         | plain    |              | 
+ tgargs              | bytea    |           |          |         | extended |              | 
+ partition_duration  | integer  |           |          |         | plain    |              | 
+ partition_key_attno | smallint |           |          |         | plain    |              | 
+Indexes:
+    "pipeline_cont_query_defrelid_index" UNIQUE, btree (defrelid)
+    "pipeline_cont_query_id_index" UNIQUE, btree (id)
+    "pipeline_cont_query_lookupidxid_index" btree (lookupidxid)
+    "pipeline_cont_query_matrelid_index" UNIQUE, btree (matrelid)
+    "pipeline_cont_query_osrelid_index" UNIQUE, btree (osrelid)
+    "pipeline_cont_query_pkidxid_index" btree (pkidxid)
+    "pipeline_cont_query_relid_index" UNIQUE, btree (relid)
+    "pipeline_cont_query_seqrelid_index" btree (seqrelid)
+
+DROP SERVER pipelinedb;
+ERROR:  cannot drop server pipelinedb because extension pipelinedb requires it
+HINT:  You can drop extension pipelinedb instead.
+DROP FOREIGN DATA WRAPPER stream_fdw;
+ERROR:  cannot drop foreign-data wrapper stream_fdw because extension pipelinedb requires it
+HINT:  You can drop extension pipelinedb instead.
+CREATE FOREIGN TABLE sanity_stream (key text, value float8, x int, y int, z int, a int, b int, k text, v int) SERVER pipelinedb;
+CREATE VIEW test_avg AS SELECT key, avg(value) FROM sanity_stream GROUP BY key;
+INSERT INTO sanity_stream (key, value) VALUES ('x', 1), ('x', 2), ('y', 100);
+SELECT * FROM test_avg ORDER BY key;
+ key | avg 
+-----+-----
+ x   | 1.5
+ y   | 100
+(2 rows)
+
+SELECT key, avg FROM test_avg_mrel ORDER BY key;
+ key |    avg    
+-----+-----------
+ x   | {2,3,0.5}
+ y   | {1,100,0}
+(2 rows)
+
+INSERT INTO sanity_stream (key, value) VALUES ('x', 10), ('x', 20), ('y', 200);
+SELECT * FROM test_avg ORDER BY key;
+ key | avg  
+-----+------
+ x   | 8.25
+ y   |  150
+(2 rows)
+
+SELECT key, avg FROM test_avg_mrel ORDER BY key;
+ key |      avg      
+-----+---------------
+ x   | {4,33,232.75}
+ y   | {2,300,5000}
+(2 rows)
+
+CREATE VIEW cv AS SELECT key, COUNT(*), MAX(x + y) FROM sanity_stream GROUP BY key;
+INSERT INTO sanity_stream (key, x, y) VALUES ('x', -1000, 1000), ('x', 0, 1), ('x', 1, 0);
+INSERT INTO sanity_stream (key, x, y) VALUES ('y', 10, 20), ('y', 20, 30), ('y', 1, 200), ('y', 1, 200), ('y', 1, 200);
+INSERT INTO sanity_stream (key, x, y) VALUES ('z', -1000, 1001);
+SELECT * FROM cv ORDER BY key;
+ key | count | max 
+-----+-------+-----
+ x   |     3 |   1
+ y   |     5 | 201
+ z   |     1 |   1
+(3 rows)
+
+CREATE VIEW cv_weird_tl AS SELECT COUNT(*), key, SUM(value) FROM sanity_stream GROUP BY key;
+INSERT INTO sanity_stream (key, value) VALUES ('x', 10), ('x', 20), ('y', 200);
+SELECT * FROM cv_weird_tl ORDER BY key;
+ count | key | sum 
+-------+-----+-----
+     2 | x   |  30
+     1 | y   | 200
+(2 rows)
+
+CREATE VIEW cv_no_grp AS SELECT COUNT(*), SUM(value) FROM sanity_stream;
+INSERT INTO sanity_stream (key, value) VALUES ('x', 10), ('x', 20), ('y', 200);
+SELECT * FROM cv_no_grp;
+ count | sum 
+-------+-----
+     3 | 230
+(1 row)
+
+CREATE VIEW cv_grp_expr AS SELECT COUNT(*), substring(key, 1, 2) AS s FROM sanity_stream GROUP BY s;
+INSERT INTO sanity_stream (key) VALUES ('aab'), ('aba'), ('aaa'), ('cab');
+SELECT * FROM cv_grp_expr ORDER BY s;
+ count | s  
+-------+----
+     2 | aa
+     1 | ab
+     1 | ca
+(3 rows)
+
+CREATE VIEW cv_multi_grp AS SELECT a, b, COUNT(*) FROM sanity_stream GROUP BY a, b;
+INSERT INTO sanity_stream (a, b) VALUES (1, 1), (1, 1), (1, 2), (2, 2), (2, 1);
+SELECT * FROM cv_multi_grp ORDER BY a, b;
+ a | b | count 
+---+---+-------
+ 1 | 1 |     2
+ 1 | 2 |     1
+ 2 | 1 |     1
+ 2 | 2 |     1
+(4 rows)
+
+CREATE VIEW cv_agg_expr AS SELECT k, COUNT(*) + SUM(v) FROM sanity_stream GROUP BY k;
+INSERT INTO sanity_stream (k, v) VALUES ('a', 1), ('a', 2), ('a', 3), ('b', 4), ('b', 5);
+SELECT * FROM cv_agg_expr ORDER BY k;
+ k | ?column? 
+---+----------
+ a |        9
+ b |       11
+(2 rows)
+
+INSERT INTO sanity_stream (k, v) VALUES ('a', 1), ('a', 2), ('b', 3);
+SELECT * FROM cv_agg_expr ORDER BY k;
+ k | ?column? 
+---+----------
+ a |       14
+ b |       15
+(2 rows)
+
+CREATE VIEW test_null_group AS SELECT x, y FROM sanity_stream GROUP BY x, y;
+INSERT INTO sanity_stream (z) VALUES (1);
+INSERT INTO sanity_stream (z) VALUES (1);
+INSERT INTO sanity_stream (x) VALUES (1);
+INSERT INTO sanity_stream (x) VALUES (1);
+INSERT INTO sanity_stream (y) VALUES (1);
+INSERT INTO sanity_stream (y) VALUES (1);
+SELECT * FROM test_null_group;
+ x | y 
+---+---
+   |  
+ 1 |  
+   | 1
+(3 rows)
+
+CREATE VIEW pk AS SELECT k AS "$pk" FROM sanity_stream;
+ERROR:  "$pk" is a reserved column name
+CREATE VIEW tl_expr AS SELECT sum(x) + count(*) FROM sanity_stream;
+CREATE VIEW tl_expr_group0 AS SELECT count(*) + 1 AS expr FROM sanity_stream GROUP BY x;
+CREATE VIEW tl_expr_group1 AS SELECT x, sum(x) + count(*) FROM sanity_stream GROUP BY x;
+INSERT INTO sanity_stream (x) VALUES (0);
+INSERT INTO sanity_stream (x) VALUES (1);
+INSERT INTO sanity_stream (x) VALUES (2);
+SELECT * FROM tl_expr;
+ ?column? 
+----------
+        6
+(1 row)
+
+SELECT * FROM tl_expr_group0 ORDER BY expr;
+ expr 
+------
+    2
+    2
+    2
+(3 rows)
+
+SELECT * FROM tl_expr_group1 ORDER BY x;
+ x | ?column? 
+---+----------
+ 0 |        1
+ 1 |        2
+ 2 |        3
+(3 rows)
+
+INSERT INTO sanity_stream (x) VALUES (0);
+INSERT INTO sanity_stream (x) VALUES (1);
+INSERT INTO sanity_stream (x) VALUES (2);
+SELECT * FROM tl_expr;
+ ?column? 
+----------
+       12
+(1 row)
+
+SELECT * FROM tl_expr_group0 ORDER BY expr;
+ expr 
+------
+    3
+    3
+    3
+(3 rows)
+
+SELECT * FROM tl_expr_group1 ORDER BY x;
+ x | ?column? 
+---+----------
+ 0 |        2
+ 1 |        4
+ 2 |        6
+(3 rows)
+
+CREATE VIEW overlay0 AS SELECT x % 10 AS g, ceil(round(avg(x::numeric))) + floor(round(avg(x::numeric))) FROM sanity_stream GROUP BY g;
+INSERT INTO sanity_stream (x) SELECT generate_series(1, 100) x;
+SELECT * FROM overlay0 ORDER BY g;
+ g | ?column? 
+---+----------
+ 0 |      110
+ 1 |       92
+ 2 |       94
+ 3 |       96
+ 4 |       98
+ 5 |      100
+ 6 |      102
+ 7 |      104
+ 8 |      106
+ 9 |      108
+(10 rows)
+
+DROP FOREIGN TABLE sanity_stream CASCADE;
+NOTICE:  drop cascades to 12 other objects
+DETAIL:  drop cascades to view test_avg
+drop cascades to view cv
+drop cascades to view cv_weird_tl
+drop cascades to view cv_no_grp
+drop cascades to view cv_grp_expr
+drop cascades to view cv_multi_grp
+drop cascades to view cv_agg_expr
+drop cascades to view test_null_group
+drop cascades to view tl_expr
+drop cascades to view tl_expr_group0
+drop cascades to view tl_expr_group1
+drop cascades to view overlay0

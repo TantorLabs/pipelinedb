@@ -1,0 +1,15 @@
+create foreign table ff_stream (ts timestamp, x int) server pipelinedb;
+create view cv_ff
+as select ts, count(*) from ff_stream group by ts;
+\d+ cv_ff_mrel;
+                                          Table "public.cv_ff_mrel"
+ Column |            Type             | Collation | Nullable | Default | Storage | Stats target | Description 
+--------+-----------------------------+-----------+----------+---------+---------+--------------+-------------
+ ts     | timestamp without time zone |           |          |         | plain   |              | 
+ count  | bigint                      |           |          |         | plain   |              | 
+ $pk    | bigint                      |           | not null |         | plain   |              | 
+Indexes:
+    "cv_ff_mrel_pkey" PRIMARY KEY, btree ("$pk")
+    "cv_ff_mrel_expr_idx" btree (pipelinedb.ls_hash_group(ts))
+Options: fillfactor=50
+

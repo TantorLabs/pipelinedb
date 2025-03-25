@@ -1,0 +1,75 @@
+# 
+# Parallel group of tests
+#
+test: pipeline_stream
+
+# 
+# Parallel group of tests
+#
+test: cont_limit cont_transform cont_view_sanity cont_sum cont_avg cont_count
+
+# 
+# Parallel group of tests
+#
+test: stream_targets date_round stream_insert_subselect stream_exprs prepared_stream_insert cont_view_namespace
+
+# 
+# Parallel group of tests
+#
+test: cont_bool_agg cont_min_max cont_regr cont_pk matrel_constraints cont_json_agg
+
+#
+# Parallel group of tests
+#
+# This test can be sensitive to expected failures in other tests, so we give it its own group
+test: user_combine
+
+#
+# Parallel group of tests
+#
+test: cont_sw_avg cont_stats_agg cont_array_agg cont_set_agg cont_distinct cont_hll_agg hll
+
+#
+# Parallel group of tests
+#
+test: cont_hs_agg cont_os_agg typed_streams bloom cont_complex_types topk cont_topk_agg
+
+#
+# Parallel group of tests
+#
+test: dist cont_dist_agg freq cont_freq_agg keyed_min_max first_values bucket_agg output_streams
+
+#
+# Parallel group of tests
+#
+test: delta_streams stream_table_join cont_activate cont_subselect hash_group
+
+#
+# Parallel group of tests
+#
+test: ttl_expiration sw_expiration part_ttl
+
+#
+# Parallel group of tests
+#
+test: analyze_cont_view
+
+#
+# Parallel group of tests
+#
+test: cont_stats cont_sw_sum cont_sw_bool_agg cont_sw_min_max cont_sw_regr cont_sw_stats
+
+#
+# Parallel group of tests
+#
+test: cont_sw_count cont_object_agg cont_sw_hs_agg cont_sw_os_agg create_cont_view
+
+#
+# Parallel group of tests
+#
+test: cont_alter cont_sw_object_agg pipeline_regress cont_grouping_sets cont_matrel cont_index
+
+#
+# Parallel group of tests
+#
+test: cont_part_basic cont_part_regress
