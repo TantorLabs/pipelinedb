@@ -1,3 +1,7 @@
+> **Note:** **Tantor PipelineDB** is a fork of the [original PipelineDB extension](https://github.com/pipelinedb/pipelinedb). In addition to compatibility with newer PostgreSQL versions, it includes:
+> - Support for [partitioning](https://docs.tantorlabs.ru/pipelinedb/en/1.3-en/continuous-views.html#partitioning) of continuous views
+> - Support for archiving continuous view partitions in Columnar format (only for the [Tantor Server](https://docs.tantorlabs.ru/tdb/en/latest/se/differences.html) now)
+
 # Tantor PipelineDB
 
 ## Overview
