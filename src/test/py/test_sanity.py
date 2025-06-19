@@ -121,7 +121,7 @@ def test_uniqueness(pipeline, clean_db):
              'SELECT x::int, count(*) FROM stream0 GROUP BY x')
 
   for i in range(10):
-    rows = [((10000 * i) + j,) for j in xrange(10000)]
+    rows = [((10000 * i) + j,) for j in range(10000)]
     pipeline.insert('stream0', ('x',), rows)
 
   count = pipeline.execute('SELECT count(*) FROM uniqueness')[0][0]
@@ -153,12 +153,12 @@ def test_concurrent_inserts(pipeline, clean_db):
 
   threads = [threading.Thread(target=insert, args=(i,))
          for i in range(num_threads)]
-  map(lambda t: t.start(), threads)
+  [t.start() for t in threads]
 
   time.sleep(60)
 
   stop = True
-  map(lambda t: t.join(), threads)
+  [t.join() for t in threads]
 
   time.sleep(5)
 
@@ -195,12 +195,12 @@ def test_concurrent_copy(pipeline, clean_db):
 
   threads = [threading.Thread(target=insert, args=(i,))
          for i in range(num_threads)]
-  map(lambda t: t.start(), threads)
+  [t.start() for t in threads]
 
   time.sleep(60)
 
   stop = True
-  map(lambda t: t.join(), threads)
+  [t.join() for t in threads]
 
   time.sleep(5)
 

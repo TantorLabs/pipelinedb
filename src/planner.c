@@ -263,8 +263,8 @@ add_tuplestore_scan_path(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTbl
 		 * We don't want Columnar to override our carefully crafted Tuplestore
 		 * CustomScan path with its own optimized table scan path.
 		 */
-		set_config_option("columnar.enable_custom_scan", "false", PGC_USERSET,
-						  PGC_S_SESSION, GUC_ACTION_SET, true, 0, false);
+		SetConfigOption("columnar.enable_custom_scan", "false", PGC_USERSET,
+						PGC_S_SESSION);
 	}
 }
 

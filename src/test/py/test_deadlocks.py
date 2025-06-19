@@ -16,7 +16,7 @@ def test_concurrent_add_drop(pipeline, clean_db):
   pipeline.create_cv('cv', q)
 
   stop = False
-  values = map(lambda x: (x,), xrange(10000))
+  values = [(x,) for x in range(10000)]
   num_inserted = [0]
 
   def insert():
@@ -40,7 +40,10 @@ def test_concurrent_add_drop(pipeline, clean_db):
         break
       if not cvs:
         cv = '%s%s' % (prefix, str(random.random())[2:])
-        cur.execute(add % cv)
+        try:
+          cur.execute(add % cv)
+        except psycopg2.errors.DeadlockDetected:
+          pass
         cvs.append(cv)
       elif len(cvs) > 10:
         cur.execute(drop % cvs.pop())
@@ -51,7 +54,10 @@ def test_concurrent_add_drop(pipeline, clean_db):
           cur.execute(add % cv)
           cvs.append(cv)
         else:
-          cur.execute(drop % cvs.pop())
+          try:
+            cur.execute(drop % cvs.pop())
+          except psycopg2.errors.UndefinedTable:
+            pass
       conn.commit()
       time.sleep(0.0025)
     cur.close()
@@ -61,12 +67,12 @@ def test_concurrent_add_drop(pipeline, clean_db):
          threading.Thread(target=add_drop, args=('cv1_',)),
          threading.Thread(target=add_drop, args=('cv2_',))]
 
-  map(lambda t: t.start(), threads)
+  [t.start() for t in threads]
 
   time.sleep(10)
   stop = True
 
-  map(lambda t: t.join(), threads)
+  [t.join() for t in threads]
 
   views = pipeline.execute('SELECT name FROM pipelinedb.get_views()')
   mrels = pipeline.execute("SELECT relname FROM pg_class WHERE relname LIKE 'cv%%_mrel'")

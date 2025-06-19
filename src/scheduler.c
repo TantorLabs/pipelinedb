@@ -478,8 +478,8 @@ cont_bgworker_main(Datum arg)
 	set_nice_priority();
 
 	/* Disable pg_store_plans for all PipelineDB workers */
-	set_config_option("pg_store_plans.track", "none", PGC_SU_BACKEND,
-					  PGC_S_SESSION, GUC_ACTION_SET, true, 0, false);
+	SetConfigOption("pg_store_plans.track", "none", PGC_SU_BACKEND,
+					PGC_S_SESSION);
 
 	run();
 
