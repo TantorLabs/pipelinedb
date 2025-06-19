@@ -298,10 +298,10 @@ select * from cv_part_ts_agg_1y2m;
 select * from list_partitions('cv_part_tstz_noagg_1h');
  parent_schema |           parent           | child  |              child_schema              
 ---------------+----------------------------+--------+----------------------------------------
- public        | cv_part_tstz_noagg_1h_mrel | public | mrel_OID_20240411140000_20240411150000
- public        | cv_part_tstz_noagg_1h_mrel | public | mrel_OID_20240411180000_20240411190000
- public        | cv_part_tstz_noagg_1h_mrel | public | mrel_OID_20240411190000_20240411200000
- public        | cv_part_tstz_noagg_1h_mrel | public | mrel_OID_20240411200000_20240411210000
+ public        | cv_part_tstz_noagg_1h_mrel | public | mrel_OID_20240411110000_20240411120000
+ public        | cv_part_tstz_noagg_1h_mrel | public | mrel_OID_20240411150000_20240411160000
+ public        | cv_part_tstz_noagg_1h_mrel | public | mrel_OID_20240411160000_20240411170000
+ public        | cv_part_tstz_noagg_1h_mrel | public | mrel_OID_20240411170000_20240411180000
 (4 rows)
 
 select * from cv_part_tstz_noagg_1h;
@@ -318,12 +318,12 @@ select * from cv_part_tstz_noagg_1h;
 select * from list_partitions('cv_part_tstz_agg_7s');
  parent_schema |          parent          | child  |              child_schema              
 ---------------+--------------------------+--------+----------------------------------------
- public        | cv_part_tstz_agg_7s_mrel | public | mrel_OID_20240411142303_20240411142310
- public        | cv_part_tstz_agg_7s_mrel | public | mrel_OID_20240411145302_20240411145309
- public        | cv_part_tstz_agg_7s_mrel | public | mrel_OID_20240411183805_20240411183812
- public        | cv_part_tstz_agg_7s_mrel | public | mrel_OID_20240411195306_20240411195313
- public        | cv_part_tstz_agg_7s_mrel | public | mrel_OID_20240411200802_20240411200809
- public        | cv_part_tstz_agg_7s_mrel | public | mrel_OID_20240411202305_20240411202312
+ public        | cv_part_tstz_agg_7s_mrel | public | mrel_OID_20240411112303_20240411112310
+ public        | cv_part_tstz_agg_7s_mrel | public | mrel_OID_20240411115302_20240411115309
+ public        | cv_part_tstz_agg_7s_mrel | public | mrel_OID_20240411153805_20240411153812
+ public        | cv_part_tstz_agg_7s_mrel | public | mrel_OID_20240411165306_20240411165313
+ public        | cv_part_tstz_agg_7s_mrel | public | mrel_OID_20240411170802_20240411170809
+ public        | cv_part_tstz_agg_7s_mrel | public | mrel_OID_20240411172305_20240411172312
 (6 rows)
 
 select * from cv_part_tstz_agg_7s;
@@ -340,12 +340,12 @@ select * from cv_part_tstz_agg_7s;
 select * from list_partitions('cv_part_tstz_agg_3m');
  parent_schema |          parent          | child  |              child_schema              
 ---------------+--------------------------+--------+----------------------------------------
- public        | cv_part_tstz_agg_3m_mrel | public | mrel_OID_20240411142100_20240411142400
- public        | cv_part_tstz_agg_3m_mrel | public | mrel_OID_20240411145100_20240411145400
- public        | cv_part_tstz_agg_3m_mrel | public | mrel_OID_20240411183600_20240411183900
- public        | cv_part_tstz_agg_3m_mrel | public | mrel_OID_20240411195100_20240411195400
- public        | cv_part_tstz_agg_3m_mrel | public | mrel_OID_20240411200600_20240411200900
- public        | cv_part_tstz_agg_3m_mrel | public | mrel_OID_20240411202100_20240411202400
+ public        | cv_part_tstz_agg_3m_mrel | public | mrel_OID_20240411112100_20240411112400
+ public        | cv_part_tstz_agg_3m_mrel | public | mrel_OID_20240411115100_20240411115400
+ public        | cv_part_tstz_agg_3m_mrel | public | mrel_OID_20240411153600_20240411153900
+ public        | cv_part_tstz_agg_3m_mrel | public | mrel_OID_20240411165100_20240411165400
+ public        | cv_part_tstz_agg_3m_mrel | public | mrel_OID_20240411170600_20240411170900
+ public        | cv_part_tstz_agg_3m_mrel | public | mrel_OID_20240411172100_20240411172400
 (6 rows)
 
 select * from cv_part_tstz_agg_3m;
@@ -362,10 +362,10 @@ select * from cv_part_tstz_agg_3m;
 select * from list_partitions('cv_part_tstz_agg_1h');
  parent_schema |          parent          | child  |              child_schema              
 ---------------+--------------------------+--------+----------------------------------------
- public        | cv_part_tstz_agg_1h_mrel | public | mrel_OID_20240411140000_20240411150000
- public        | cv_part_tstz_agg_1h_mrel | public | mrel_OID_20240411180000_20240411190000
- public        | cv_part_tstz_agg_1h_mrel | public | mrel_OID_20240411190000_20240411200000
- public        | cv_part_tstz_agg_1h_mrel | public | mrel_OID_20240411200000_20240411210000
+ public        | cv_part_tstz_agg_1h_mrel | public | mrel_OID_20240411110000_20240411120000
+ public        | cv_part_tstz_agg_1h_mrel | public | mrel_OID_20240411150000_20240411160000
+ public        | cv_part_tstz_agg_1h_mrel | public | mrel_OID_20240411160000_20240411170000
+ public        | cv_part_tstz_agg_1h_mrel | public | mrel_OID_20240411170000_20240411180000
 (4 rows)
 
 select * from cv_part_tstz_agg_1h;
@@ -382,7 +382,7 @@ select * from cv_part_tstz_agg_1h;
 select * from list_partitions('cv_part_tstz_agg_2w');
  parent_schema |          parent          | child  |              child_schema              
 ---------------+--------------------------+--------+----------------------------------------
- public        | cv_part_tstz_agg_2w_mrel | public | mrel_OID_20240406030000_20240420030000
+ public        | cv_part_tstz_agg_2w_mrel | public | mrel_OID_20240406000000_20240420000000
 (1 row)
 
 select * from cv_part_tstz_agg_2w;
@@ -416,7 +416,7 @@ select * from cv_part_tstz_agg_1mo;
 select * from list_partitions('cv_part_tstz_agg_1y');
  parent_schema |          parent          | child  |              child_schema              
 ---------------+--------------------------+--------+----------------------------------------
- public        | cv_part_tstz_agg_1y_mrel | public | mrel_OID_20240101030000_20241231090000
+ public        | cv_part_tstz_agg_1y_mrel | public | mrel_OID_20240101000000_20241231060000
 (1 row)
 
 select * from cv_part_tstz_agg_1y;
@@ -433,7 +433,7 @@ select * from cv_part_tstz_agg_1y;
 select * from list_partitions('cv_part_tstz_agg_1y2m');
  parent_schema |           parent           | child  |              child_schema              
 ---------------+----------------------------+--------+----------------------------------------
- public        | cv_part_tstz_agg_1y2m_mrel | public | mrel_OID_20230415030000_20240613090000
+ public        | cv_part_tstz_agg_1y2m_mrel | public | mrel_OID_20230415000000_20240613060000
 (1 row)
 
 select * from cv_part_tstz_agg_1y2m;

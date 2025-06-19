@@ -1624,7 +1624,7 @@ create_dumped_ct(Relation pq, RangeVar *name, const char *sql, SelectStmt *stmt,
 	Oid viewid = InvalidOid;
 	Oid streamrelid = InvalidOid;
 	Oid osrelid = InvalidOid;
-	Oid tgfnid;
+	Oid tgfnid = InvalidOid;
 	char *relname;
 	List *dumped;
 

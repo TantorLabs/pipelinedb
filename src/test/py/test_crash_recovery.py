@@ -10,7 +10,7 @@ import time
 def _get_pids(grep_str):
   try:
     out = check_output('ps aux | grep "postgres" | grep "%s"' % grep_str,
-               shell=True).split('\n')
+               shell=True).split(b'\n')
   except CalledProcessError:
     return []
   out = filter(lambda s: len(s), out)
@@ -41,17 +41,17 @@ def _kill(pid):
 
 
 def get_worker_pids():
-  return _get_pids('worker[0-9] \[postgres\]')
+  return _get_pids('worker[0-9] \\[postgres\\]')
 
 def get_combiner_pids():
-  return _get_pids('combiner[0-9] \[postgres\]')
+  return _get_pids('combiner[0-9] \\[postgres\\]')
 
 def kill_worker():
-  return _kill(_get_pid('worker[0-9] \[postgres\]'))
+  return _kill(_get_pid('worker[0-9] \\[postgres\\]'))
 
 
 def kill_combiner():
-  return _kill(_get_pid('combiner[0-9] \[postgres\]'))
+  return _kill(_get_pid('combiner[0-9] \\[postgres\\]'))
 
 
 def test_simple_crash(pipeline, clean_db):
@@ -111,7 +111,7 @@ def test_concurrent_crash(pipeline, clean_db):
         break
 
   def kill():
-    for _ in xrange(30):
+    for _ in range(30):
       r = random.random()
       if r > 0.85:
         desc[0] += kill_combiner()
@@ -123,8 +123,8 @@ def test_concurrent_crash(pipeline, clean_db):
 
   threads = [threading.Thread(target=insert),
          threading.Thread(target=kill)]
-  map(lambda t: t.start(), threads)
-  map(lambda t: t.join(), threads)
+  [t.start() for t in threads]
+  [t.join() for t in threads]
 
   num_killed = desc[0]
   num_inserted = desc[1]

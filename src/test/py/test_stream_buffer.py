@@ -23,17 +23,17 @@ def test_stream_buffer(pipeline, clean_db):
   # We're sending this 2k string with each event just to consume
   # more space in the stream buffer. That way we get to test the
   # wrapping of the buffer as well.
-  values = [(i, 'a' * 2048) for i in xrange(num_per_batch)]
+  values = [(i, 'a' * 2048) for i in range(num_per_batch)]
 
   def insert(stream):
-    for _ in xrange(num_batches - 1):
+    for _ in range(num_batches - 1):
       pipeline.insert(stream, ('x', 'string'), values)
 
   threads = [threading.Thread(target=insert, args=('stream1', )),
          threading.Thread(target=insert, args=('stream2', ))]
 
-  map(lambda t: t.start(), threads)
-  map(lambda t: t.join(), threads)
+  [t.start() for t in threads]
+  [t.join() for t in threads]
 
   pipeline.insert('stream1', ('x', 'string'), values)
   pipeline.insert('stream2', ('x', 'string'), values)

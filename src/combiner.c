@@ -411,18 +411,15 @@ get_cached_groups_plan(ContQueryCombinerState *state, List *values)
 	 * tests) is that the optimizer resorts to BitmapHeapScan, which is not
 	 * affected by the problems listed above.
 	 */
+	old_enable_indexscan = enable_indexscan;
 	if (IS_PARTITIONED_MATREL(state))
 	{
-		old_enable_indexscan = enable_indexscan;
 		enable_indexscan = false;
 	}
 
 	plan = GetGroupsLookupPlan(query, ps);
 
-	if (IS_PARTITIONED_MATREL(state))
-	{
-		enable_indexscan = old_enable_indexscan;
-	}
+	enable_indexscan = old_enable_indexscan;
 
 	old_cxt = MemoryContextSwitchTo(state->plan_cache_cxt);
 	state->groups_plan = copyObject(plan);
@@ -523,11 +520,27 @@ get_partition_lower_bound(MatRelPartitionKey *ts, Interval *i)
 	Datum (*trunc_func)(PG_FUNCTION_ARGS);
 	MatRelPartitionKey result;
 	Datum val;
+	char *old_tz = NULL;
 
 	Assert(ts->typid == TIMESTAMPOID || ts->typid == TIMESTAMPTZOID);
 
-	trunc_func = (ts->typid == TIMESTAMPOID) ?
-		timestamp_trunc : timestamptz_trunc;
+	/*
+	 * For TIMESTAMP WITH TIME ZONE partition keys, we want to calculate
+	 * partition boundaries in a fixed timezone that does not depend on the
+	 * server or OS settings. Otherwise, changing the server/OS timezone may
+	 * lead to problems with subsequently created partitions.
+	 */
+	if (ts->typid == TIMESTAMPTZOID)
+	{
+		trunc_func = timestamptz_trunc;
+
+		old_tz = pstrdup(GetConfigOption("TimeZone", false, false));
+		SetConfigOption("TimeZone", "UTC", PGC_USERSET, PGC_S_SESSION);
+	}
+	else
+	{
+		trunc_func = timestamp_trunc;
+	}
 
 	/*
 	 * We perform some special casing for common partition intervals so that users get predictable and sane partition
@@ -570,6 +583,12 @@ get_partition_lower_bound(MatRelPartitionKey *ts, Interval *i)
 
 	result.value = val;
 	result.typid = ts->typid;
+
+	if (old_tz)
+	{
+		SetConfigOption("TimeZone", old_tz, PGC_USERSET, PGC_S_SESSION);
+		pfree(old_tz);
+	}
 
 	return result;
 }
@@ -1479,6 +1498,7 @@ tick_sw_groups(ContQueryCombinerState *state, Relation matrel, bool force)
 	List *fdw_private;
 	bool close_matrel = matrel == NULL;
 	bool *replaces;
+	size_t replaces_size;
 
 	if (!force && !TimestampDifferenceExceeds(state->sw->last_tick,
 			GetCurrentTimestamp(), state->base.query->sw_step_ms))
@@ -1534,7 +1554,8 @@ tick_sw_groups(ContQueryCombinerState *state, Relation matrel, bool force)
 	 */
 	tuplestore_rescan(state->sw->overlay_output);
 
-	replaces = palloc(state->overlay_desc->natts * sizeof(bool));
+	replaces_size = state->overlay_desc->natts * sizeof(bool);
+	replaces = palloc(replaces_size);
 
 	foreach_tuple(state->overlay_slot, state->sw->overlay_output)
 	{
@@ -1569,7 +1590,7 @@ tick_sw_groups(ContQueryCombinerState *state, Relation matrel, bool force)
 
 		if (!isnew)
 		{
-			MemSet(replaces, false, sizeof(replaces));
+			MemSet(replaces, false, replaces_size);
 			ExecStoreHeapTuple(overlay_entry->base.tuple, state->overlay_prev_slot, false);
 
 			/*
