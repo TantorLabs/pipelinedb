@@ -22,6 +22,7 @@
 #include "utils/typcache.h"
 
 extern volatile sig_atomic_t pipeline_got_SIGTERM;
+extern volatile sig_atomic_t pipeline_got_SIGQUIT;
 
 typedef struct tagged_ref_t
 {
@@ -35,6 +36,13 @@ typedef struct tagged_ref_t
 		pipeline_got_SIGTERM = true; \
 	} while (0)
 #define get_sigterm_flag() (pipeline_got_SIGTERM)
+
+#define set_sigquit_flag() \
+	do \
+	{ \
+		pipeline_got_SIGQUIT = true; \
+	} while (0)
+#define get_sigquit_flag() (pipeline_got_SIGQUIT)
 
 #define ptr_difference(begin, end) ((void *) (((char *) end) - ((char *) begin)))
 #define ptr_offset(begin, offset) ((void *) (((char *) begin) + ((uintptr_t) offset)))
@@ -57,7 +65,7 @@ extern void DatumToBytes(Datum d, TypeCacheEntry *typ, StringInfo buf);
 
 extern Oid GetTypeOid(char *name);
 
-extern bool equalTupleDescsWeak(TupleDesc tupdesc1, TupleDesc tupdesc2, bool check_names);
+extern bool equalTupleDescsWeak(TupleDesc tupdesc1, TupleDesc tupdesc2, bool check_names, int natts);
 
 extern void print_tupledesc(TupleDesc desc);
 

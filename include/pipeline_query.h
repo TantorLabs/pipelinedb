@@ -14,6 +14,7 @@
 #include "postgres.h"
 
 #include "access/htup_details.h"
+#include "datatype/timestamp.h"
 #include "nodes/parsenodes.h"
 #include "nodes/primnodes.h"
 #include "nodes/queryjumble.h"
@@ -139,7 +140,6 @@ typedef struct ContQuery
 	Oid matrelid;
 	Oid osrelid;
 	Oid streamrelid;
-	Query *cvdef_orig;
 	Query *cvdef;
 
 	/* for view */

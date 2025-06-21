@@ -25,6 +25,7 @@
 #include "utils/builtins.h"
 #include "utils/date.h"
 #include "utils/datetime.h"
+#include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/json.h"
 #include "utils/jsonfuncs.h"
@@ -756,7 +757,7 @@ report_json_context(JsonLexContext *lex)
 					  line_number, prefix, ctxt, suffix);
 }
 
-#if (PG_VERSION_NUM / 100 != 1700)
+#if (PG_VERSION_NUM / 100 != 1800)
 #error datum_to_json_internal() is a copy from the Postgres source code. \
 	You may want to update it.
 #endif
@@ -882,9 +883,16 @@ datum_to_json_internal(Datum val, bool is_null, StringInfo result,
 			pfree(jsontext);
 			break;
 		default:
-			outputstr = OidOutputFunctionCall(outfuncoid, val);
-			escape_json(result, outputstr);
-			pfree(outputstr);
+			/* special-case text types to save useless palloc/memcpy cycles */
+			if (outfuncoid == F_TEXTOUT || outfuncoid == F_VARCHAROUT ||
+				outfuncoid == F_BPCHAROUT)
+				escape_json_text(result, (text *) DatumGetPointer(val));
+			else
+			{
+				outputstr = OidOutputFunctionCall(outfuncoid, val);
+				escape_json(result, outputstr);
+				pfree(outputstr);
+			}
 			break;
 	}
 }

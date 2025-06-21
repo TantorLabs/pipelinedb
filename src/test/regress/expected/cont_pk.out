@@ -9,6 +9,8 @@ CREATE VIEW test_pk0 WITH (pk='x') AS SELECT x::integer, COUNT(*) FROM test_pk_s
 Indexes:
     "test_pk0_mrel_pkey" PRIMARY KEY, btree (x) WITH (fillfactor='50')
     "test_pk0_mrel_expr_idx" btree (pipelinedb.hash_group(x)) WITH (fillfactor='50')
+Not-null constraints:
+    "test_pk0_mrel_x_not_null" NOT NULL "x"
 Options: fillfactor=50
 
 INSERT INTO test_pk_stream (x) SELECT generate_series(1, 20) AS x;
@@ -59,6 +61,8 @@ CREATE VIEW test_pk1 WITH (pk='count') AS SELECT x::integer, COUNT(*) FROM test_
 Indexes:
     "test_pk1_mrel_pkey" PRIMARY KEY, btree (count) WITH (fillfactor='50')
     "test_pk1_mrel_expr_idx" btree (pipelinedb.hash_group(x)) WITH (fillfactor='50')
+Not-null constraints:
+    "test_pk1_mrel_count_not_null" NOT NULL "count"
 Options: fillfactor=50
 
 INSERT INTO test_pk_stream (x) VALUES (0);

@@ -29,6 +29,11 @@ Indexes:
     "pipeline_cont_query_pkidxid_index" btree (pkidxid)
     "pipeline_cont_query_relid_index" UNIQUE, btree (relid)
     "pipeline_cont_query_seqrelid_index" btree (seqrelid)
+Not-null constraints:
+    "cont_query_id_not_null" NOT NULL "id"
+    "cont_query_relid_not_null" NOT NULL "relid"
+    "cont_query_defrelid_not_null" NOT NULL "defrelid"
+    "cont_query_matrelid_not_null" NOT NULL "matrelid"
 
 DROP SERVER pipelinedb;
 ERROR:  cannot drop server pipelinedb because extension pipelinedb requires it

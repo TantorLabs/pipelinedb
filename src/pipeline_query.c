@@ -43,6 +43,7 @@
 #include "parser/parse_func.h"
 #include "parser/parse_target.h"
 #include "parser/parse_type.h"
+#include "parser/parse_utilcmd.h"
 #include "pipeline_query.h"
 #include "pipeline_stream.h"
 #include "planner.h"
@@ -1558,10 +1559,7 @@ record_ct_dependencies(Oid relid, Oid osrelid, Oid fnoid, Oid defrelid, SelectSt
 			srel = table_openrv(rv, NoLock);
 			desc = CreateTupleDescCopy(RelationGetDescr(srel));
 
-			/* HACK(usmanm): Ignore arrival_timestamp. Should be fixed by #1616. */
-			desc->natts--;
-
-			if (!equalTupleDescsWeak(RelationGetDescr(rel), desc, false))
+			if (!equalTupleDescsWeak(RelationGetDescr(rel), desc, false, desc->natts - 1))
 				ereport(ERROR,
 						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 						errmsg("\"%s\" must have the same schema as the transform", strVal(v))));
@@ -1621,7 +1619,7 @@ create_dumped_ct(Relation pq, RangeVar *name, const char *sql, SelectStmt *stmt,
 	Oid viewid = InvalidOid;
 	Oid streamrelid = InvalidOid;
 	Oid osrelid = InvalidOid;
-	Oid tgfnid;
+	Oid tgfnid = InvalidOid;
 	char *relname;
 	List *dumped;
 
@@ -1788,7 +1786,7 @@ ExecCreateContViewStmt(RangeVar *view, Node *sel, List *options, const char *que
 	Oid pkey_idx_oid = InvalidOid;
 	Oid defrelid = InvalidOid;
 	Datum toast_options;
-	static char *validnsps[] = HEAP_RELOPT_NAMESPACES;
+	const char *const validnsps[] = HEAP_RELOPT_NAMESPACES;
 	SelectStmt *workerselect;
 	SelectStmt *viewselect;
 	SelectStmt *select;
@@ -1993,6 +1991,8 @@ ExecCreateContViewStmt(RangeVar *view, Node *sel, List *options, const char *que
 		 */
 		matrel_name->inh = true;
 	}
+
+	transformCreateStmt(create_stmt, "CREATE TABLE");
 
 	address = DefineRelation(create_stmt, RELKIND_RELATION, InvalidOid, &typaddr, NULL);
 

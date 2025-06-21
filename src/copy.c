@@ -74,7 +74,7 @@ typedef struct
 	uint64		processed;		/* # of tuples processed */
 } DR_copy;
 
-#if (PG_VERSION_NUM / 100 != 1700)
+#if (PG_VERSION_NUM / 100 != 1800)
 #error DoStreamCopy is a copy of DoCopy from the Postgres source code with \
 	minor modifications. You may want to update it.
 #endif
@@ -321,12 +321,6 @@ DoStreamCopy(ParseState *pstate, const CopyStmt *stmt,
 	{
 		Assert(stmt->query);
 
-		/* MERGE is allowed by parser, but unimplemented. Reject for now */
-		if (IsA(stmt->query, MergeStmt))
-			ereport(ERROR,
-					errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					errmsg("MERGE not supported in COPY"));
-
 		query = makeNode(RawStmt);
 		query->stmt = stmt->query;
 		query->stmt_location = stmt_location;
@@ -363,7 +357,7 @@ DoStreamCopy(ParseState *pstate, const CopyStmt *stmt,
 }
 
 
-#if (PG_VERSION_NUM / 100 != 1700)
+#if (PG_VERSION_NUM / 100 != 1800)
 #error CopyStreamFrom is a heavily modified copy of CopyFrom from the Postgres \
 	source code. You may want to update it.
 #endif
@@ -405,7 +399,8 @@ CopyStreamFrom(CopyFromState cstate)
 	 * index-entry-making machinery.  (There used to be a huge amount of code
 	 * here that basically duplicated execUtils.c ...)
 	 */
-	ExecInitRangeTable(estate, cstate->range_table, cstate->rteperminfos);
+	ExecInitRangeTable(estate, cstate->range_table, cstate->rteperminfos,
+					   bms_make_singleton(1));
 	resultRelInfo = makeNode(ResultRelInfo);
 	ExecInitResultRelation(estate, resultRelInfo, 1);
 

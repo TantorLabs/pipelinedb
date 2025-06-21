@@ -47,6 +47,7 @@
 #include "utils/varlena.h"
 
 volatile sig_atomic_t pipeline_got_SIGTERM = false;
+volatile sig_atomic_t pipeline_got_SIGQUIT = false;
 
 #define round_down(value, base) ((value) - ((value) % (base)))
 
@@ -272,16 +273,31 @@ SlotAttrsToBytes(TupleTableSlot *slot, int num_attrs, AttrNumber *attrs, StringI
  * equalTupleDescsWeak
  *
  * This is less strict than equalTupleDescs and enforces enough similarity that we can merge tuples.
+ *
+ * The natts argument can be used to limit the number of attributes to compare.
+ * If greater than 0, we stop the comparison after that many equal attributes in
+ * each descriptor and consider both descriptors equal.
  */
 bool
-equalTupleDescsWeak(TupleDesc tupdesc1, TupleDesc tupdesc2, bool check_names)
+equalTupleDescsWeak(TupleDesc tupdesc1, TupleDesc tupdesc2, bool check_names, int natts)
 {
 	int	i;
 
-	if (tupdesc1->natts != tupdesc2->natts)
-		return false;
+	if (natts <= 0)
+	{
+		if (tupdesc1->natts != tupdesc2->natts)
+			return false;
 
-	for (i = 0; i < tupdesc1->natts; i++)
+		natts = tupdesc1->natts;
+	}
+	else
+	{
+		if (tupdesc1->natts < natts ||
+			tupdesc2->natts < natts)
+			return false;
+	}
+
+	for (i = 0; i < natts; i++)
 	{
 		Form_pg_attribute attr1 = TupleDescAttr(tupdesc1, i);
 		Form_pg_attribute attr2 = TupleDescAttr(tupdesc2, i);

@@ -123,15 +123,18 @@ CompatBuildTupleHashTable(TupleDesc desc,
 					MemoryContext tablecxt,
 					MemoryContext tempcxt, bool use_variable_hash_iv)
 {
-#if (PG_VERSION_NUM < 110000)
-	return BuildTupleHashTable(numCols, keyColIdx, eqfuncs, hashfunctions, nbuckets,
-			additionalsize, tablecxt, tempcxt, use_variable_hash_iv);
-#else
-	{
-		return BuildTupleHashTable(NULL, desc, numCols, keyColIdx, eqfuncs, hashfunctions, collations, nbuckets,
-				additionalsize, tablecxt, tempcxt, use_variable_hash_iv);
-	}
+	return BuildTupleHashTable(NULL, desc,
+#if (PG_VERSION_NUM >= 180000)
+							   NULL,
 #endif
+							   numCols, keyColIdx, eqfuncs,
+							   hashfunctions, collations, nbuckets,
+							   additionalsize, tablecxt,
+#if (PG_VERSION_NUM >= 180000)
+							   tablecxt,
+#endif
+							   tempcxt,
+							   use_variable_hash_iv);
 
 }
 

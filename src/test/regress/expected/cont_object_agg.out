@@ -1,56 +1,6 @@
--- array_sort function
-DROP FUNCTION IF EXISTS array_sort(anyarray);
-NOTICE:  function array_sort(anyarray) does not exist, skipping
-CREATE FUNCTION
-  array_sort(
-      array_vals_to_sort anyarray
-  )
-  RETURNS TABLE (
-    sorted_array anyarray
-  )
-  AS $BODY$
-    BEGIN
-      RETURN QUERY SELECT
-        ARRAY_AGG(val) AS sorted_array
-      FROM
-        (
-          SELECT
-            UNNEST(array_vals_to_sort) COLLATE "en_US.utf8" AS val
-          ORDER BY
-            val
-        ) AS sorted_vals
-      ;
-    END;
-  $BODY$
-LANGUAGE plpgsql;
--- int_array_sort function
-DROP FUNCTION IF EXISTS int_array_sort(anyarray);
-NOTICE:  function int_array_sort(anyarray) does not exist, skipping
-CREATE FUNCTION
-  int_array_sort(
-      array_vals_to_sort anyarray
-  )
-  RETURNS TABLE (
-    sorted_array anyarray
-  )
-  AS $BODY$
-    BEGIN
-      RETURN QUERY SELECT
-        ARRAY_AGG(val) AS sorted_array
-      FROM
-        (
-          SELECT
-            UNNEST(array_vals_to_sort) AS val
-          ORDER BY
-            val
-        ) AS sorted_vals
-      ;
-    END;
-  $BODY$
-LANGUAGE plpgsql;
 -- json_to_array function
 DROP FUNCTION IF EXISTS json_to_array(json);
-NOTICE:  function json_to_array(json) does not exist, skipping
+NOTICE:  function json_to_array(pg_catalog.json) does not exist, skipping
 CREATE FUNCTION
   json_to_array(
       json_arr json
@@ -75,7 +25,7 @@ CREATE FUNCTION
 LANGUAGE plpgsql;
 -- json_keys_array function
 DROP FUNCTION IF EXISTS json_keys_array(json);
-NOTICE:  function json_keys_array(json) does not exist, skipping
+NOTICE:  function json_keys_array(pg_catalog.json) does not exist, skipping
 CREATE FUNCTION
   json_keys_array(
       json_obj json
@@ -103,7 +53,7 @@ CREATE FOREIGN TABLE cqobjectagg_stream (key text, tval text, fval float8, ival 
 CREATE VIEW test_json_agg AS SELECT key::text, json_agg(tval::text) AS j0, json_agg(fval::float8) AS j1, json_agg(ival::integer) AS j2 FROM cqobjectagg_stream GROUP BY key;
 INSERT INTO cqobjectagg_stream (key, tval, fval, ival) VALUES ('x', 'text', 0.01, 42), ('x', 'more text', 0.01, 42), ('x', 'blaahhhh', 0.01, 42);
 INSERT INTO cqobjectagg_stream (key, tval, fval, ival) VALUES ('y', '4.2', 1.01, 42), ('z', '\"quoted\"', 2.01, 42), ('x', '', 0.01, 42), ('z', '2', '3', '4');
-SELECT key, array_sort(json_to_array(j0)) FROM test_json_agg ORDER BY key;
+SELECT key, array_sort(json_to_array(j0) COLLATE "en_US.utf8") FROM test_json_agg ORDER BY key;
  key |                     array_sort                     
 -----+----------------------------------------------------
  x   | {"\"\"","\"blaahhhh\"","\"more text\"","\"text\""}
@@ -128,7 +78,7 @@ SELECT key, array_sort(json_to_array(j2)) FROM test_json_agg ORDER BY key;
 (3 rows)
 
 INSERT INTO cqobjectagg_stream (key, tval, fval, ival) VALUES ('x', 'text', 0.01, 42), ('y', 'more text', 0.01, 42), ('z', 'blaahhhh', 0.01, 42);
-SELECT key, array_sort(json_to_array(j0)) FROM test_json_agg ORDER BY key;
+SELECT key, array_sort(json_to_array(j0) COLLATE "en_US.utf8") FROM test_json_agg ORDER BY key;
  key |                          array_sort                           
 -----+---------------------------------------------------------------
  x   | {"\"\"","\"blaahhhh\"","\"more text\"","\"text\"","\"text\""}
@@ -264,21 +214,23 @@ CREATE VIEW test_array_agg AS SELECT k::text, array_agg(v::integer) FROM cqobjec
 Indexes:
     "test_array_agg_mrel_pkey" PRIMARY KEY, btree ("$pk") WITH (fillfactor='50')
     "test_array_agg_mrel_expr_idx" btree (pipelinedb.hash_group(k)) WITH (fillfactor='50')
+Not-null constraints:
+    "test_array_agg_mrel_$pk_not_null" NOT NULL "$pk"
 Options: fillfactor=50
 
 INSERT INTO cqobjectagg_stream (k, v) VALUES ('x', 0), ('x', 1), ('x', 2), ('x', 3);
 INSERT INTO cqobjectagg_stream (k, v) VALUES ('y', 0), ('y', 1);
-SELECT k, int_array_sort(array_agg) FROM test_array_agg ORDER BY k;
- k | int_array_sort 
----+----------------
+SELECT k, array_sort(array_agg) FROM test_array_agg ORDER BY k;
+ k | array_sort 
+---+------------
  x | {0,1,2,3}
  y | {0,1}
 (2 rows)
 
 INSERT INTO cqobjectagg_stream (k, v) VALUES ('x', 4), ('y', 2), ('z', 10), ('z', 20);
-SELECT k, int_array_sort(array_agg) FROM test_array_agg ORDER BY k;
- k | int_array_sort 
----+----------------
+SELECT k, array_sort(array_agg) FROM test_array_agg ORDER BY k;
+ k | array_sort  
+---+-------------
  x | {0,1,2,3,4}
  y | {0,1,2}
  z | {10,20}
@@ -294,8 +246,8 @@ SELECT pg_sleep(0.1);
 (1 row)
 
 INSERT INTO cqobjectagg_stream (k) VALUES ('lol'), ('cat');
-SELECT int_array_sort(array_agg) FROM test_array_agg;
-    int_array_sort     
+SELECT array_sort(array_agg) FROM test_array_agg;
+      array_sort       
 -----------------------
  {cat,hello,lol,world}
 (1 row)
@@ -352,7 +304,7 @@ CREATE FOREIGN TABLE cqobjectagg_stream (key text, tval text, fval float8, ival 
 CREATE VIEW test_jsonb_agg AS SELECT key::text, jsonb_agg(tval::text) AS j0, jsonb_agg(fval::float8) AS j1, jsonb_agg(ival::integer) AS j2 FROM cqobjectagg_stream GROUP BY key;
 INSERT INTO cqobjectagg_stream (key, tval, fval, ival) VALUES ('x', 'text', 0.01, 42), ('x', 'more text', 0.01, 42), ('x', 'blaahhhh', 0.01, 42);
 INSERT INTO cqobjectagg_stream (key, tval, fval, ival) VALUES ('y', '4.2', 1.01, 42), ('z', '\"quoted\"', 2.01, 42), ('x', '', 0.01, 42), ('z', '2', '3', '4');
-SELECT key, array_sort(json_to_array(j0::json)) FROM test_jsonb_agg ORDER BY key;
+SELECT key, array_sort(json_to_array(j0::json) COLLATE "en_US.utf8") FROM test_jsonb_agg ORDER BY key;
  key |                     array_sort                     
 -----+----------------------------------------------------
  x   | {"\"\"","\"blaahhhh\"","\"more text\"","\"text\""}
@@ -377,7 +329,7 @@ SELECT key, array_sort(json_to_array(j2::json)) FROM test_jsonb_agg ORDER BY key
 (3 rows)
 
 INSERT INTO cqobjectagg_stream (key, tval, fval, ival) VALUES ('x', 'text', 0.01, 42), ('y', 'more text', 0.01, 42), ('z', 'blaahhhh', 0.01, 42);
-SELECT key, array_sort(json_to_array(j0::json)) FROM test_jsonb_agg ORDER BY key;
+SELECT key, array_sort(json_to_array(j0::json) COLLATE "en_US.utf8") FROM test_jsonb_agg ORDER BY key;
  key |                          array_sort                           
 -----+---------------------------------------------------------------
  x   | {"\"\"","\"blaahhhh\"","\"more text\"","\"text\"","\"text\""}
@@ -453,6 +405,5 @@ DROP FOREIGN TABLE cqobjectagg_stream CASCADE;
 NOTICE:  drop cascades to 2 other objects
 DETAIL:  drop cascades to view test_jsonb_object_agg0
 drop cascades to view test_jsonb_object_agg1
-DROP FUNCTION array_sort(anyarray);
 DROP FUNCTION json_to_array(json);
 DROP FUNCTION json_keys_array(json);

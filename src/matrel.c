@@ -31,6 +31,7 @@
 #include "utils/memutils.h"
 #include "utils/palloc.h"
 #include "utils/rel.h"
+#include "utils/snapmgr.h"
 #include "utils/syscache.h"
 
 bool matrels_writable;
@@ -139,7 +140,7 @@ DefineMatRelPartition(RangeVar *matrel, MatRelPartitionKey *lower_bound,
 	MatRelPartitionKey *upper_bound = &upper_bound_val;
 	Datum toast_options;
 	ObjectAddress address;
-	static char *validnsps[] = HEAP_RELOPT_NAMESPACES;
+	const char *const validnsps[] = HEAP_RELOPT_NAMESPACES;
 	List *matrel_options = NIL;
 
 	*upper_bound = get_partition_upper_bound(lower_bound, duration);
@@ -186,6 +187,11 @@ DefineMatRelPartition(RangeVar *matrel, MatRelPartitionKey *lower_bound,
 
 	transformCreateStmt(cstmt, "CREATE TABLE");
 
+	/*
+	 * Push an active snapshot before accessing TOAST tables.
+	 */
+	PushActiveSnapshot(GetTransactionSnapshot());
+
 	address = DefineRelation(cstmt, RELKIND_RELATION, InvalidOid, NULL, "combiner");
 	CommandCounterIncrement();
 
@@ -194,6 +200,8 @@ DefineMatRelPartition(RangeVar *matrel, MatRelPartitionKey *lower_bound,
 
 	(void) heap_reloptions(RELKIND_TOASTVALUE, toast_options, true);
 	AlterTableCreateToastTable(address.objectId, toast_options, AccessExclusiveLock);
+
+	PopActiveSnapshot();
 
 	if (log_partitions)
 		elog(LOG, "created partition %s", cstmt->relation->relname);

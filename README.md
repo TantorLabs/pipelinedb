@@ -21,6 +21,7 @@ Tantor PipelineDB runs on 64-bit architectures and currently supports the follow
 * **PostgreSQL 15**
 * **PostgreSQL 16**
 * **PostgreSQL 17**
+* **PostgreSQL 18**
 
 Going forward, we plan to maintain it for all supported PostgreSQL versions at the time each Tantor PipelineDB release is out.
 

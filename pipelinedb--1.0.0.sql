@@ -206,21 +206,6 @@ CREATE AGGREGATE partial_combine_float8_avg(float8[]) (
   parallel = safe
 );
 
-CREATE AGGREGATE combine_interval_avg(interval[]) (
-  sfunc = interval_combine,
-  stype = interval[],
-  finalfunc = interval_avg,
-  combinefunc = interval_combine,
-  parallel = safe
-);
-
-CREATE AGGREGATE partial_combine_interval_avg(interval[]) (
-  sfunc = interval_combine,
-  stype = interval[],
-  combinefunc = interval_combine,
-  parallel = safe
-);
-
 CREATE AGGREGATE combine_int8_sum(internal) (
   sfunc = int8_avg_combine,
   stype = internal,

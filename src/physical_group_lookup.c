@@ -227,9 +227,6 @@ output_physical_tuple(TupleTableSlot *slot)
 
 	old = MemoryContextSwitchTo(lookup_result->tablecxt);
 
-	pt = palloc0(sizeof(PhysicalTupleData));
-	pt->tuple = ExecCopySlotHeapTuple(slot);
-
 	mslot = MakeSingleTupleTableSlot(slot->tts_tupleDescriptor,
 									 &TTSOpsMinimalTuple);
 	ExecCopySlot(mslot, slot);
@@ -238,7 +235,8 @@ output_physical_tuple(TupleTableSlot *slot)
 
 	ExecDropSingleTupleTableSlot(mslot);
 
-	entry->additional = pt;
+	pt = TupleHashEntryGetAdditional(lookup_result, entry);
+	pt->tuple = ExecCopySlotHeapTuple(slot);
 
 	MemoryContextSwitchTo(old);
 }

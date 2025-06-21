@@ -167,6 +167,8 @@ CREATE VIEW ls_hash_group2 AS SELECT x::int, y::timestamptz, COUNT(*) FROM hash_
 Indexes:
     "hash_group_mrel_pkey" PRIMARY KEY, btree ("$pk") WITH (fillfactor='50')
     "hash_group_mrel_expr_idx" btree (pipelinedb.hash_group(x)) WITH (fillfactor='50')
+Not-null constraints:
+    "hash_group_mrel_$pk_not_null" NOT NULL "$pk"
 Options: fillfactor=50
 
 \d+ ls_hash_group1_mrel;
@@ -181,6 +183,8 @@ Options: fillfactor=50
 Indexes:
     "ls_hash_group1_mrel_pkey" PRIMARY KEY, btree ("$pk") WITH (fillfactor='50')
     "ls_hash_group1_mrel_expr_idx" btree (pipelinedb.ls_hash_group(arrival_timestamp, x, minute)) WITH (fillfactor='50')
+Not-null constraints:
+    "ls_hash_group1_mrel_$pk_not_null" NOT NULL "$pk"
 Options: fillfactor=50
 
 \d+ ls_hash_group2_mrel;
@@ -194,6 +198,8 @@ Options: fillfactor=50
 Indexes:
     "ls_hash_group2_mrel_pkey" PRIMARY KEY, btree ("$pk") WITH (fillfactor='50')
     "ls_hash_group2_mrel_expr_idx" btree (pipelinedb.ls_hash_group(x, y)) WITH (fillfactor='50')
+Not-null constraints:
+    "ls_hash_group2_mrel_$pk_not_null" NOT NULL "$pk"
 Options: fillfactor=50
 
 DROP INDEX hash_group_mrel_expr_idx;

@@ -23,6 +23,8 @@ SELECT pg_get_viewdef('cqcreate0');
  $pk    | bigint  |           | not null |         | plain   |              | 
 Indexes:
     "cqcreate0_mrel_pkey" PRIMARY KEY, btree ("$pk") WITH (fillfactor='50')
+Not-null constraints:
+    "cqcreate0_mrel_$pk_not_null" NOT NULL "$pk"
 Options: fillfactor=50
 
 \d+ cqcreate0_osrel;
@@ -57,6 +59,8 @@ SELECT pg_get_viewdef('cqcreate1');
  $pk       | bigint |           | not null |         | plain    |              | 
 Indexes:
     "cqcreate1_mrel_pkey" PRIMARY KEY, btree ("$pk") WITH (fillfactor='50')
+Not-null constraints:
+    "cqcreate1_mrel_$pk_not_null" NOT NULL "$pk"
 Options: fillfactor=50
 
 \d+ cqcreate1_osrel;
@@ -93,6 +97,8 @@ SELECT pg_get_viewdef('cqcreate2');
  $pk    | bigint  |           | not null |         | plain    |              | 
 Indexes:
     "cqcreate2_mrel_pkey" PRIMARY KEY, btree ("$pk") WITH (fillfactor='50')
+Not-null constraints:
+    "cqcreate2_mrel_$pk_not_null" NOT NULL "$pk"
 Options: fillfactor=50
 
 \d+ cqcreate2_osrel;
@@ -139,6 +145,8 @@ SELECT pg_get_viewdef('cqcreate3');
 Indexes:
     "cqcreate3_mrel_pkey" PRIMARY KEY, btree ("$pk") WITH (fillfactor='50')
     "cqcreate3_mrel_expr_idx" btree (pipelinedb.hash_group(key)) WITH (fillfactor='50')
+Not-null constraints:
+    "cqcreate3_mrel_$pk_not_null" NOT NULL "$pk"
 Options: fillfactor=50
 
 \d+ cqcreate3_osrel;
@@ -177,6 +185,8 @@ SELECT pg_get_viewdef('cqcreate4');
 Indexes:
     "cqcreate4_mrel_pkey" PRIMARY KEY, btree ("$pk") WITH (fillfactor='50')
     "cqcreate4_mrel_expr_idx" btree (pipelinedb.hash_group(_0)) WITH (fillfactor='50')
+Not-null constraints:
+    "cqcreate4_mrel_$pk_not_null" NOT NULL "$pk"
 Options: fillfactor=50
 
 \d+ cqcreate4_osrel;
@@ -215,6 +225,8 @@ SELECT pg_get_viewdef('cqcreate5');
 Indexes:
     "cqcreate5_mrel_pkey" PRIMARY KEY, btree ("$pk") WITH (fillfactor='50')
     "cqcreate5_mrel_arrival_timestamp_idx" btree (arrival_timestamp) WITH (fillfactor='50')
+Not-null constraints:
+    "cqcreate5_mrel_$pk_not_null" NOT NULL "$pk"
 Options: fillfactor=50
 
 \d+ cqcreate5_osrel;
@@ -253,6 +265,8 @@ SELECT pg_get_viewdef('cqcreate6');
 Indexes:
     "cqcreate6_mrel_pkey" PRIMARY KEY, btree ("$pk") WITH (fillfactor='50')
     "cqcreate6_mrel_expr_idx" btree (pipelinedb.ls_hash_group(arrival_timestamp, _0)) WITH (fillfactor='50')
+Not-null constraints:
+    "cqcreate6_mrel_$pk_not_null" NOT NULL "$pk"
 Options: fillfactor=50
 
 \d+ cqcreate6_osrel;
@@ -267,12 +281,12 @@ Server: pipelinedb
 -- These use a combine state column
 CREATE VIEW cvavg AS SELECT key, AVG(x) AS float_avg, AVG(y) AS int_avg, AVG(ts0 - ts1) AS internal_avg FROM create_cont_stream GROUP BY key;
 SELECT pg_get_viewdef('cvavg');
-                                                  pg_get_viewdef                                                  
-------------------------------------------------------------------------------------------------------------------
-  SELECT key,                                                                                                    +
-     float8_avg(float_avg) AS float_avg,                                                                         +
-     pipelinedb.finalize('pg_catalog.avg'::text, '{pg_catalog.int8}'::text[], int_avg, NULL::numeric) AS int_avg,+
-     interval_avg(internal_avg) AS internal_avg                                                                  +
+                                                         pg_get_viewdef                                                         
+--------------------------------------------------------------------------------------------------------------------------------
+  SELECT key,                                                                                                                  +
+     float8_avg(float_avg) AS float_avg,                                                                                       +
+     pipelinedb.finalize('pg_catalog.avg'::text, '{pg_catalog.int8}'::text[], int_avg, NULL::numeric) AS int_avg,              +
+     pipelinedb.finalize('pg_catalog.avg'::text, '{pg_catalog.interval}'::text[], internal_avg, NULL::interval) AS internal_avg+
     FROM ONLY cvavg_mrel;
 (1 row)
 
@@ -283,11 +297,13 @@ SELECT pg_get_viewdef('cvavg');
  key          | text               |           |          |         | extended |              | 
  float_avg    | double precision[] |           |          |         | extended |              | 
  int_avg      | bytea              |           |          |         | extended |              | 
- internal_avg | interval[]         |           |          |         | extended |              | 
+ internal_avg | bytea              |           |          |         | extended |              | 
  $pk          | bigint             |           | not null |         | plain    |              | 
 Indexes:
     "cvavg_mrel_pkey" PRIMARY KEY, btree ("$pk") WITH (fillfactor='50')
     "cvavg_mrel_expr_idx" btree (pipelinedb.hash_group(key)) WITH (fillfactor='50')
+Not-null constraints:
+    "cvavg_mrel_$pk_not_null" NOT NULL "$pk"
 Options: fillfactor=50
 
 \d+ cvavg_osrel;
@@ -316,6 +332,8 @@ SELECT pg_get_viewdef('cvjson');
  $pk       | bigint |           | not null |         | plain    |              | 
 Indexes:
     "cvjson_mrel_pkey" PRIMARY KEY, btree ("$pk") WITH (fillfactor='50')
+Not-null constraints:
+    "cvjson_mrel_$pk_not_null" NOT NULL "$pk"
 Options: fillfactor=50
 
 \d+ cvjson_osrel;
@@ -344,6 +362,8 @@ SELECT pg_get_viewdef('cvjsonobj');
  $pk             | bigint |           | not null |         | plain    |              | 
 Indexes:
     "cvjsonobj_mrel_pkey" PRIMARY KEY, btree ("$pk") WITH (fillfactor='50')
+Not-null constraints:
+    "cvjsonobj_mrel_$pk_not_null" NOT NULL "$pk"
 Options: fillfactor=50
 
 \d+ cvjsonobj_osrel;
@@ -373,6 +393,8 @@ SELECT pg_get_viewdef('cvcount');
  $pk     | bigint |           | not null |         | plain    |              | 
 Indexes:
     "cvcount_mrel_pkey" PRIMARY KEY, btree ("$pk") WITH (fillfactor='50')
+Not-null constraints:
+    "cvcount_mrel_$pk_not_null" NOT NULL "$pk"
 Options: fillfactor=50
 
 \d+ cvcount_osrel;
@@ -401,6 +423,8 @@ SELECT pg_get_viewdef('cvarray');
  $pk       | bigint |           | not null |         | plain   |              | 
 Indexes:
     "cvarray_mrel_pkey" PRIMARY KEY, btree ("$pk") WITH (fillfactor='50')
+Not-null constraints:
+    "cvarray_mrel_$pk_not_null" NOT NULL "$pk"
 Options: fillfactor=50
 
 \d+ cvarray_osrel;
@@ -432,6 +456,8 @@ SELECT pg_get_viewdef('cvtext');
 Indexes:
     "cvtext_mrel_pkey" PRIMARY KEY, btree ("$pk") WITH (fillfactor='50')
     "cvtext_mrel_expr_idx" btree (pipelinedb.hash_group(key)) WITH (fillfactor='50')
+Not-null constraints:
+    "cvtext_mrel_$pk_not_null" NOT NULL "$pk"
 Options: fillfactor=50
 
 \d+ cvtext_osrel;
@@ -462,6 +488,8 @@ SELECT pg_get_viewdef('cqaggexpr1');
  $pk    | bigint |           | not null |         | plain    |              | 
 Indexes:
     "cqaggexpr1_mrel_pkey" PRIMARY KEY, btree ("$pk") WITH (fillfactor='50')
+Not-null constraints:
+    "cqaggexpr1_mrel_$pk_not_null" NOT NULL "$pk"
 Options: fillfactor=50
 
 \d+ cqaggexpr1_osrel;
@@ -494,6 +522,8 @@ SELECT pg_get_viewdef('cqaggexpr2');
 Indexes:
     "cqaggexpr2_mrel_pkey" PRIMARY KEY, btree ("$pk") WITH (fillfactor='50')
     "cqaggexpr2_mrel_expr_idx" btree (pipelinedb.hash_group(key)) WITH (fillfactor='50')
+Not-null constraints:
+    "cqaggexpr2_mrel_$pk_not_null" NOT NULL "$pk"
 Options: fillfactor=50
 
 \d+ cqaggexpr2_osrel;
@@ -528,6 +558,8 @@ SELECT pg_get_viewdef('cqaggexpr3');
 Indexes:
     "cqaggexpr3_mrel_pkey" PRIMARY KEY, btree ("$pk") WITH (fillfactor='50')
     "cqaggexpr3_mrel_expr_idx" btree (pipelinedb.ls_hash_group(arrival_timestamp, key)) WITH (fillfactor='50')
+Not-null constraints:
+    "cqaggexpr3_mrel_$pk_not_null" NOT NULL "$pk"
 Options: fillfactor=50
 
 \d+ cqaggexpr3_osrel;
@@ -558,6 +590,8 @@ SELECT pg_get_viewdef('cqaggexpr4');
 Indexes:
     "cqaggexpr4_mrel_pkey" PRIMARY KEY, btree ("$pk") WITH (fillfactor='50')
     "cqaggexpr4_mrel_expr_idx" btree (pipelinedb.hash_group(key)) WITH (fillfactor='50')
+Not-null constraints:
+    "cqaggexpr4_mrel_$pk_not_null" NOT NULL "$pk"
 Options: fillfactor=50
 
 \d+ cqaggexpr4_osrel;
@@ -591,6 +625,8 @@ SELECT pg_get_viewdef('cqgroupby');
 Indexes:
     "cqgroupby_mrel_pkey" PRIMARY KEY, btree ("$pk") WITH (fillfactor='50')
     "cqgroupby_mrel_expr_idx" btree (pipelinedb.hash_group(key, x)) WITH (fillfactor='50')
+Not-null constraints:
+    "cqgroupby_mrel_$pk_not_null" NOT NULL "$pk"
 Options: fillfactor=50
 
 \d+ cqgroupby_osrel;
@@ -631,6 +667,8 @@ SELECT pg_get_viewdef('multigroupindex');
 Indexes:
     "multigroupindex_mrel_pkey" PRIMARY KEY, btree ("$pk") WITH (fillfactor='50')
     "multigroupindex_mrel_expr_idx" btree (pipelinedb.hash_group(key, x, y, z, value)) WITH (fillfactor='50')
+Not-null constraints:
+    "multigroupindex_mrel_$pk_not_null" NOT NULL "$pk"
 Options: fillfactor=50
 
 \d+ multigroupindex_osrel;
@@ -672,6 +710,8 @@ CREATE VIEW withff WITH (fillfactor = 42) AS SELECT COUNT(*) FROM create_cont_st
  $pk    | bigint |           | not null |         | plain   |              | 
 Indexes:
     "withff_mrel_pkey" PRIMARY KEY, btree ("$pk") WITH (fillfactor='50')
+Not-null constraints:
+    "withff_mrel_$pk_not_null" NOT NULL "$pk"
 Options: fillfactor=42
 
 -- It shouldn't be possible to DROP a continuous view with DROP VIEW, and vice-versa

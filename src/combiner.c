@@ -411,18 +411,15 @@ get_cached_groups_plan(ContQueryCombinerState *state, List *values)
 	 * tests) is that the optimizer resorts to BitmapHeapScan, which is not
 	 * affected by the problems listed above.
 	 */
+	old_enable_indexscan = enable_indexscan;
 	if (IS_PARTITIONED_MATREL(state))
 	{
-		old_enable_indexscan = enable_indexscan;
 		enable_indexscan = false;
 	}
 
 	plan = GetGroupsLookupPlan(query, ps);
 
-	if (IS_PARTITIONED_MATREL(state))
-	{
-		enable_indexscan = old_enable_indexscan;
-	}
+	enable_indexscan = old_enable_indexscan;
 
 	old_cxt = MemoryContextSwitchTo(state->plan_cache_cxt);
 	state->groups_plan = copyObject(plan);
@@ -455,8 +452,9 @@ hash_groups(ContQueryCombinerState *state)
 			ALLOCSET_DEFAULT_MAXSIZE);
 
 	groups = CompatBuildTupleHashTable(state->desc, existing->numCols, existing->keyColIdx,
-			state->eq_funcs, existing->tab_hash_funcs, existing->tab_collations, 1000,
-			existing->entrysize, cxt, tmp_cxt, false);
+			state->eq_funcs, state->hash_funcs, existing->tab_collations, 1000,
+			sizeof(TupleHashEntryData) + existing->additionalsize, cxt, tmp_cxt,
+			false);
 
 	tuplestore_rescan(state->batch);
 
@@ -523,11 +521,27 @@ get_partition_lower_bound(MatRelPartitionKey *ts, Interval *i)
 	Datum (*trunc_func)(PG_FUNCTION_ARGS);
 	MatRelPartitionKey result;
 	Datum val;
+	char *old_tz = NULL;
 
 	Assert(ts->typid == TIMESTAMPOID || ts->typid == TIMESTAMPTZOID);
 
-	trunc_func = (ts->typid == TIMESTAMPOID) ?
-		timestamp_trunc : timestamptz_trunc;
+	/*
+	 * For TIMESTAMP WITH TIME ZONE partition keys, we want to calculate
+	 * partition boundaries in a fixed timezone that does not depend on the
+	 * server or OS settings. Otherwise, changing the server/OS timezone may
+	 * lead to problems with subsequently created partitions.
+	 */
+	if (ts->typid == TIMESTAMPTZOID)
+	{
+		trunc_func = timestamptz_trunc;
+
+		old_tz = pstrdup(GetConfigOption("TimeZone", false, false));
+		SetConfigOption("TimeZone", "UTC", PGC_USERSET, PGC_S_SESSION);
+	}
+	else
+	{
+		trunc_func = timestamp_trunc;
+	}
 
 	/*
 	 * We perform some special casing for common partition intervals so that users get predictable and sane partition
@@ -570,6 +584,12 @@ get_partition_lower_bound(MatRelPartitionKey *ts, Interval *i)
 
 	result.value = val;
 	result.typid = ts->typid;
+
+	if (old_tz)
+	{
+		SetConfigOption("TimeZone", old_tz, PGC_USERSET, PGC_S_SESSION);
+		pfree(old_tz);
+	}
 
 	return result;
 }
@@ -909,7 +929,6 @@ select_existing_groups(ContQueryCombinerState *state)
 	(void) PortalRun(portal,
 					 FETCH_ALL,
 					 true,
-					 true,
 					 dest,
 					 dest,
 					 NULL);
@@ -934,7 +953,7 @@ finish:
 	InitTupleHashIterator(existing, &status);
 	while ((entry = ScanTupleHashTable(existing, &status)) != NULL)
 	{
-		pt = entry->additional;
+		pt = TupleHashEntryGetAdditional(existing, entry);
 		/*
 		 * We only need to add on-disk tuples to the input once, because they'll
 		 * be accumulated upon within the ongoing combine result until we sync.
@@ -1087,7 +1106,9 @@ sync_sw_matrel_groups(ContQueryCombinerState *state, Relation matrel)
 				state->sw->arrival_ts_attr,
 				BTGreaterEqualStrategyNumber, F_TIMESTAMP_GE, TimestampTzGetDatum(oldest));
 
-	scan = table_beginscan(matrel, GetTransactionSnapshot(), 1, skey);
+	PushActiveSnapshot(GetTransactionSnapshot());
+
+	scan = table_beginscan(matrel, GetActiveSnapshot(), 1, skey);
 
 	if (state->hashfunc)
 	{
@@ -1138,25 +1159,27 @@ sync_sw_matrel_groups(ContQueryCombinerState *state, Relation matrel)
 
 		if (!isnew)
 		{
-			Assert(entry->additional);
-			pfree(entry->additional);
+			Assert(TupleHashEntryGetAdditional(state->sw->step_groups, entry));
 		}
 
-		size += state->sw->step_groups->entrysize + HEAPTUPLESIZE + tup->t_len;
+		size += sizeof(TupleHashEntryData) +
+			state->sw->step_groups->additionalsize +
+			HEAPTUPLESIZE + tup->t_len;
 
 		if (size > continuous_query_combiner_work_mem)
 			elog(ERROR, "not enough continuous_query_combiner_work_mem to sync sliding-window groups");
 
 		old = MemoryContextSwitchTo(state->sw->step_groups->tablecxt);
-		ot = palloc0(sizeof(OverlayTupleEntry));
+		ot = TupleHashEntryGetAdditional(state->sw->step_groups, entry);
 		ot->base.tuple = heap_copytuple(tup);
-		entry->additional = ot;
 		MemoryContextSwitchTo(old);
 
 		state->sw->last_matrel_sync = GetCurrentTimestamp();
 	}
 
 	table_endscan(scan);
+
+	PopActiveSnapshot();
 }
 
 /*
@@ -1234,7 +1257,8 @@ add_cached_sw_tuples_to_overlay_input(ContQueryCombinerState *state)
 		Datum d;
 		bool isnull;
 		TimestampTz ts;
-		OverlayTupleEntry *ot = (OverlayTupleEntry *) matrel_entry->additional;
+		OverlayTupleEntry *ot = TupleHashEntryGetAdditional(
+			state->sw->step_groups, matrel_entry);
 		PhysicalTuple matrel_tup = &ot->base;
 
 		ExecStoreHeapTuple(matrel_tup->tuple, slot, false);
@@ -1356,7 +1380,8 @@ gc_cached_overlay_tuples(ContQueryCombinerState *state,
 		bool nulls[4];
 		HeapTuple tup;
 		HeapTuple os_tup;
-		OverlayTupleEntry *overlay_entry = (OverlayTupleEntry *) entry->additional;
+		OverlayTupleEntry *overlay_entry = TupleHashEntryGetAdditional(
+			state->sw->overlay_groups, entry);
 
 		if (overlay_entry->last_touched == this_tick)
 			continue;
@@ -1399,7 +1424,7 @@ gc_cached_overlay_tuples(ContQueryCombinerState *state,
 	}
 }
 
-#if (PG_VERSION_NUM / 100 != 1700)
+#if (PG_VERSION_NUM / 100 != 1800)
 #error init_plan() is a trimmed down copy of InitPlan() from the Postgres \
 	source code. You may want to update it.
 #endif
@@ -1410,33 +1435,53 @@ gc_cached_overlay_tuples(ContQueryCombinerState *state,
  * Initialize a given execution plan
  */
 static void
-init_plan(QueryDesc *query_desc)
+init_plan(QueryDesc *queryDesc)
 {
-	Plan *plan = query_desc->plannedstmt->planTree;
+	PlannedStmt *plannedstmt = queryDesc->plannedstmt;
+	Plan *plan = queryDesc->plannedstmt->planTree;
+	List	   *rangeTable = plannedstmt->rtable;
+	EState	   *estate = queryDesc->estate;
+	PlanState  *planstate;
+	TupleDesc	tupType;
 	ListCell *lc;
 
 	/*
 	 * Do permissions checks
 	 */
-	ExecCheckPermissions(query_desc->plannedstmt->rtable,
-						 query_desc->plannedstmt->permInfos, true);
+	ExecCheckPermissions(rangeTable, plannedstmt->permInfos, true);
 
-	ExecInitRangeTable(query_desc->estate, query_desc->plannedstmt->rtable,
-		query_desc->plannedstmt->permInfos);
+	/*
+	 * initialize the node's execution state
+	 */
+	ExecInitRangeTable(estate, rangeTable, plannedstmt->permInfos,
+					   bms_copy(plannedstmt->unprunableRelids));
 
-	query_desc->estate->es_plannedstmt = query_desc->plannedstmt;
+	estate->es_plannedstmt = plannedstmt;
+	estate->es_part_prune_infos = plannedstmt->partPruneInfos;
 
-	foreach(lc, query_desc->plannedstmt->subplans)
+	foreach(lc, plannedstmt->subplans)
 	{
 		Plan *subplan = (Plan *) lfirst(lc);
 		PlanState  *subplanstate;
 
-		subplanstate = ExecInitNode(subplan, query_desc->estate, PIPELINE_EXEC_CONTINUOUS);
-		query_desc->estate->es_subplanstates = lappend(query_desc->estate->es_subplanstates, subplanstate);
+		subplanstate = ExecInitNode(subplan, estate, PIPELINE_EXEC_CONTINUOUS);
+		estate->es_subplanstates = lappend(estate->es_subplanstates, subplanstate);
 	}
 
-	query_desc->planstate = ExecInitNode(plan, query_desc->estate, PIPELINE_EXEC_CONTINUOUS);
-	query_desc->tupDesc = ExecGetResultType(query_desc->planstate);
+	/*
+	 * Initialize the private state information for all the nodes in the query
+	 * tree.  This opens files, allocates storage and leaves us ready to start
+	 * processing tuples.
+	 */
+	planstate = ExecInitNode(plan, estate, PIPELINE_EXEC_CONTINUOUS);
+
+	/*
+	 * Get the tuple descriptor describing the type of tuples to return.
+	 */
+	tupType = ExecGetResultType(planstate);
+
+	queryDesc->tupDesc = tupType;
+	queryDesc->planstate = planstate;
 }
 
 /*
@@ -1454,12 +1499,12 @@ execute_sw_overlay_plan(ContQueryCombinerState *state)
 	Assert(state->sw->overlay_dest);
 
 	tuplestore_clear(state->sw->overlay_output);
-	query_desc = CreateQueryDesc(state->sw->overlay_plan,
-			NULL, InvalidSnapshot, InvalidSnapshot, state->sw->overlay_dest, NULL, NULL, 0);
+	query_desc = CreateQueryDesc(state->sw->overlay_plan, NULL, InvalidSnapshot,
+								 InvalidSnapshot, state->sw->overlay_dest, NULL,
+								 NULL, 0);
 	query_desc->estate = CreateEState(query_desc);
 
-	AcquireRewriteLocks(copyObject(state->base.query->cvdef_orig), true, false);
-	AcquireRewriteLocks(copyObject(state->base.query->cvdef), true, false);
+	AcquireExecutorLocks(list_make1(query_desc->plannedstmt), true);
 
 	init_plan(query_desc);
 
@@ -1491,6 +1536,7 @@ tick_sw_groups(ContQueryCombinerState *state, Relation matrel, bool force)
 	List *fdw_private;
 	bool close_matrel = matrel == NULL;
 	bool *replaces;
+	size_t replaces_size;
 
 	if (!force && !TimestampDifferenceExceeds(state->sw->last_tick,
 			GetCurrentTimestamp(), state->base.query->sw_step_ms))
@@ -1546,7 +1592,8 @@ tick_sw_groups(ContQueryCombinerState *state, Relation matrel, bool force)
 	 */
 	tuplestore_rescan(state->sw->overlay_output);
 
-	replaces = palloc(state->overlay_desc->natts * sizeof(bool));
+	replaces_size = state->overlay_desc->natts * sizeof(bool);
+	replaces = palloc(replaces_size);
 
 	foreach_tuple(state->overlay_slot, state->sw->overlay_output)
 	{
@@ -1564,24 +1611,14 @@ tick_sw_groups(ContQueryCombinerState *state, Relation matrel, bool force)
 		Assert(!TupIsNull(state->overlay_slot));
 		entry = (TupleHashEntry) LookupTupleHashEntry(state->sw->overlay_groups, state->overlay_slot, &isnew, NULL);
 
-		/*
-		 * We must create our additional data ourselves
-		 */
-		if (isnew)
-		{
-			old = MemoryContextSwitchTo(state->sw->step_groups->tablecxt);
-			overlay_entry = palloc0(sizeof(OverlayTupleEntry));
-			entry->additional = overlay_entry;
-			MemoryContextSwitchTo(old);
-		}
+		overlay_entry = TupleHashEntryGetAdditional(state->sw->overlay_groups, entry);
+		Assert(overlay_entry);
 
-		Assert(entry->additional);
-		overlay_entry = (OverlayTupleEntry *) entry->additional;
 		overlay_entry->last_touched = this_tick;
 
 		if (!isnew)
 		{
-			MemSet(replaces, false, sizeof(replaces));
+			MemSet(replaces, false, replaces_size);
 			ExecStoreHeapTuple(overlay_entry->base.tuple, state->overlay_prev_slot, false);
 
 			/*
@@ -1599,7 +1636,6 @@ tick_sw_groups(ContQueryCombinerState *state, Relation matrel, bool force)
 		overlay_entry->last_touched = this_tick;
 		MemoryContextSwitchTo(old);
 
-		entry->additional = overlay_entry;
 		MemSet(nulls, true, sizeof(nulls));
 
 		if (old_tup)
@@ -1803,16 +1839,9 @@ project_sw_overlay_into_ostream(ContQueryCombinerState *state, Relation matrel)
 		TupleHashEntry entry = LookupTupleHashEntry(state->sw->step_groups, state->slot, &isnew, NULL);
 		OverlayTupleEntry *ot;
 
-		if (isnew)
-		{
-			old = MemoryContextSwitchTo(state->sw->step_groups->tablecxt);
-			ot = palloc0(sizeof(OverlayTupleEntry));
-			entry->additional = ot;
-			MemoryContextSwitchTo(old);
-		}
+		ot = TupleHashEntryGetAdditional(state->sw->step_groups, entry);
 
-		Assert(entry->additional);
-		ot = (OverlayTupleEntry *) entry->additional;
+		Assert(ot);
 
 		if (!isnew)
 			heap_freetuple(ot->base.tuple);
@@ -1875,7 +1904,6 @@ combine(ContQueryCombinerState *state, bool lookup)
 
 	(void) PortalRun(portal,
 					 FETCH_ALL,
-					 true,
 					 true,
 					 dest,
 					 dest,
@@ -1971,9 +1999,8 @@ sync_combine(ContQueryCombinerState *state)
 
 		entry = LookupTupleHashEntry(state->deltas, state->slot, &new, NULL);
 
-		pt = palloc0(sizeof(PhysicalTupleData));
+		pt = TupleHashEntryGetAdditional(state->deltas, entry);
 		pt->tuple = ExecCopySlotHeapTuple(state->slot);
-		entry->additional = pt;
 
 		tuplestore_puttupleslot(state->batch, state->slot);
 
@@ -2047,8 +2074,8 @@ sync_combine(ContQueryCombinerState *state)
 			entry = LookupTupleHashEntry(state->existing, slot, NULL, NULL);
 			if (entry)
 			{
-				Assert(entry->additional);
-				update = (PhysicalTuple) entry->additional;
+				update = TupleHashEntryGetAdditional(state->existing, entry);
+				Assert(update);
 			}
 		}
 
@@ -2129,7 +2156,7 @@ sync_combine(ContQueryCombinerState *state)
 
 			if (e != NULL)
 			{
-				PhysicalTuple pt = (PhysicalTuple) e->additional;
+				PhysicalTuple pt = TupleHashEntryGetAdditional(state->deltas, e);
 				os_values[DELTA_TUPLE] = heap_copy_tuple_as_datum(pt->tuple, state->desc);
 				os_nulls[DELTA_TUPLE] = false;
 				os_nulls[state->output_stream_arrival_ts - 1] = true;
@@ -3024,7 +3051,7 @@ combine_table(PG_FUNCTION_ARGS)
 	matrel = table_openrv(cv->matrel, ExclusiveLock);
 	srcrel = table_openrv(rel_rv, AccessShareLock);
 
-	if (!equalTupleDescsWeak(RelationGetDescr(matrel), RelationGetDescr(srcrel), true))
+	if (!equalTupleDescsWeak(RelationGetDescr(matrel), RelationGetDescr(srcrel), true, 0))
 		elog(ERROR, "schema of \"%s\" does not match the schema of \"%s\"",
 				text_to_cstring(relname), quote_qualified_identifier(cv->matrel->schemaname, cv->matrel->relname));
 
@@ -3064,7 +3091,9 @@ combine_table(PG_FUNCTION_ARGS)
 		hashfcinfo->nargs = list_length(state->hashfunc->args);
 	}
 
-	scan = table_beginscan(srcrel, GetTransactionSnapshot(), 0, NULL);
+	PushActiveSnapshot(GetTransactionSnapshot());
+
+	scan = table_beginscan(srcrel, GetActiveSnapshot(), 0, NULL);
 	state->pending_tuples = 0;
 
 	Assert(base->tmp_cxt);
@@ -3099,6 +3128,8 @@ combine_table(PG_FUNCTION_ARGS)
 	}
 
 	heap_endscan(scan);
+
+	PopActiveSnapshot();
 
 	table_close(srcrel, NoLock);
 	table_close(matrel, NoLock);

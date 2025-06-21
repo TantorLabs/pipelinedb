@@ -34,6 +34,8 @@ CREATE VIEW test_array_agg AS SELECT k::text, array_agg(v::integer) FROM cqobjec
 Indexes:
     "test_array_agg_mrel_pkey" PRIMARY KEY, btree ("$pk") WITH (fillfactor='50')
     "test_array_agg_mrel_expr_idx" btree (pipelinedb.hash_group(k)) WITH (fillfactor='50')
+Not-null constraints:
+    "test_array_agg_mrel_$pk_not_null" NOT NULL "$pk"
 Options: fillfactor=50
 
 INSERT INTO cqobjectagg_stream (k, v) VALUES ('x', 0), ('x', 1), ('x', 2), ('x', 3);

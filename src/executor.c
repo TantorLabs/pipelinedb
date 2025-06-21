@@ -18,6 +18,7 @@
 #include "microbatch.h"
 #include "miscutils.h"
 #include "pgstat.h"
+#include "storage/lmgr.h"
 #include "tcop/tcopprot.h"
 #include "utils/lsyscache.h"
 #include "utils/snapmgr.h"
@@ -613,4 +614,50 @@ ExecuteContPlan(EState *estate,
 
 	if (use_parallel_mode)
 		ExitParallelMode();
+}
+
+#if (PG_VERSION_NUM / 100 != 1800)
+#error AcquireExecutorLocks() is a slightly modified copy from the Postgres \
+	source code. You may want to update it.
+#endif
+
+/*
+ * AcquireExecutorLocks: acquire locks needed for execution of a cached plan;
+ * or release them if acquire is false.
+ */
+void
+AcquireExecutorLocks(List *stmt_list, bool acquire)
+{
+	ListCell   *lc1;
+
+	foreach(lc1, stmt_list)
+	{
+		PlannedStmt *plannedstmt = lfirst_node(PlannedStmt, lc1);
+		int			rtindex;
+
+		Assert(plannedstmt->commandType == CMD_SELECT);
+
+		rtindex = -1;
+		while ((rtindex = bms_next_member(plannedstmt->unprunableRelids,
+										  rtindex)) >= 0)
+		{
+			RangeTblEntry *rte = list_nth_node(RangeTblEntry,
+											   plannedstmt->rtable,
+											   rtindex - 1);
+
+			Assert(rte->rtekind == RTE_RELATION ||
+				   (rte->rtekind == RTE_SUBQUERY && OidIsValid(rte->relid)));
+
+			/*
+			 * Acquire the appropriate type of lock on each relation OID. Note
+			 * that we don't actually try to open the rel, and hence will not
+			 * fail if it's been dropped entirely --- we'll just transiently
+			 * acquire a non-conflicting lock.
+			 */
+			if (acquire)
+				LockRelationOid(rte->relid, rte->rellockmode);
+			else
+				UnlockRelationOid(rte->relid, rte->rellockmode);
+		}
+	}
 }

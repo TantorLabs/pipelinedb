@@ -198,7 +198,6 @@ static PlannedStmt *
 get_plan_from_stmt(ContQuery *view, RawStmt *node, bool is_combine,
 				   bool rewrite_combines)
 {
-	ListCell *qlc;
 	PlannedStmt	*plan;
 
 	view->cvdef = linitial(pg_analyze_and_rewrite_fixedparams(node, view->sql,
@@ -210,22 +209,7 @@ get_plan_from_stmt(ContQuery *view, RawStmt *node, bool is_combine,
 	if (rewrite_combines)
 		RewriteCombineAggs(view->cvdef);
 
-	view->cvdef_orig = copyObject(view->cvdef);
-
 	plan = pg_plan_query(view->cvdef, view->sql, 0, NULL);
-
-	/*
-	 * pg_plan_query() can modify the passed Query object in a way that is not
-	 * liked by subsequent calls to AcquireRewriteLocks(). We have to filter out
-	 * empty RTE_SUBQUERY nodes.
-	 */
-	foreach(qlc, view->cvdef->rtable)
-	{
-		RangeTblEntry *rte = (RangeTblEntry *) lfirst(qlc);
-		if (rte->rtekind == RTE_SUBQUERY && rte->subquery == NULL)
-			view->cvdef->rtable = foreach_delete_current(view->cvdef->rtable,
-														 qlc);
-	}
 
 	return plan;
 }
@@ -263,8 +247,8 @@ add_tuplestore_scan_path(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTbl
 		 * We don't want Columnar to override our carefully crafted Tuplestore
 		 * CustomScan path with its own optimized table scan path.
 		 */
-		set_config_option("columnar.enable_custom_scan", "false", PGC_USERSET,
-						  PGC_S_SESSION, GUC_ACTION_SET, true, 0, false);
+		SetConfigOption("columnar.enable_custom_scan", "false", PGC_USERSET,
+						PGC_S_SESSION);
 	}
 }
 
@@ -414,7 +398,7 @@ try_nestloop_path(PlannerInfo *root,
 	initial_cost_nestloop(root, &workspace, jointype,
 						  outer_path, inner_path, extra);
 
-	if (add_path_precheck(joinrel,
+	if (add_path_precheck(joinrel, workspace.disabled_nodes,
 						  workspace.startup_cost, workspace.total_cost,
 						  pathkeys, required_outer))
 	{
@@ -507,6 +491,10 @@ add_physical_group_lookup_join_path(PlannerInfo *root, RelOptInfo *joinrel, RelO
 
 	/* only consider plans for which the VALUES scan is the outer */
 	if (inner->rtekind == RTE_VALUES || inner->rtekind == RTE_SUBQUERY)
+		return;
+
+	/* exclude JOIN_RIGHT_SEMI plans */
+	if (jointype == JOIN_RIGHT_SEMI)
 		return;
 
 	remove_custom_paths(innerrel);
@@ -861,7 +849,7 @@ PipelinePlanner(Query *parse, const char *query_string, int options, ParamListIn
 	return result;
 }
 
-#if (PG_VERSION_NUM / 100 != 1700)
+#if (PG_VERSION_NUM / 100 != 1800)
 #error end_plan() is a copy of ExecEndPlan() from the Postgres source code \
 	with minor modifications. You may want to update it.
 #endif
@@ -872,13 +860,23 @@ PipelinePlanner(Query *parse, const char *query_string, int options, ParamListIn
 void
 end_plan(QueryDesc *query_desc)
 {
-	ListCell		*lc;
+	PlanState *planstate = query_desc->planstate;
+	EState *estate = query_desc->estate;
+	ListCell		*l;
 
-	ExecEndNode(query_desc->planstate);
-	foreach(lc, query_desc->estate->es_subplanstates)
+	/*
+	 * shut down the node-type-specific query processing
+	 */
+	ExecEndNode(planstate);
+
+	/*
+	 * for subplans too
+	 */
+	foreach(l, estate->es_subplanstates)
 	{
-		PlanState *ps = (PlanState *) lfirst(lc);
-		ExecEndNode(ps);
+		PlanState  *subplanstate = (PlanState *) lfirst(l);
+
+		ExecEndNode(subplanstate);
 	}
 
 	/*
@@ -887,14 +885,14 @@ end_plan(QueryDesc *query_desc)
 	 * the TupleTableSlots, since the containing memory context is about to go
 	 * away anyway.
 	 */
-	ExecResetTupleTable(query_desc->estate->es_tupleTable, false);
+	ExecResetTupleTable(estate->es_tupleTable, false);
 
 	/*
 	 * Close any Relations that have been opened for range table entries or
 	 * result relations.
 	 */
-	ExecCloseResultRelations(query_desc->estate);
-	ExecCloseRangeTableRelations(query_desc->estate);
+	ExecCloseResultRelations(estate);
+	ExecCloseRangeTableRelations(estate);
 
 	query_desc->planstate = NULL;
 }

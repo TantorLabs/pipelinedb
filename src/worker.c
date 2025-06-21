@@ -114,7 +114,9 @@ init_query_state(ContExecutor *exec, ContQueryState *base)
 
 	pstmt = GetContPlan(base->query, Worker);
 
-	state->query_desc = CreateQueryDesc(pstmt, state->base.query->sql, InvalidSnapshot, InvalidSnapshot, state->dest, NULL, NULL, 0);
+	state->query_desc = CreateQueryDesc(pstmt, state->base.query->sql,
+										InvalidSnapshot, InvalidSnapshot,
+										state->dest, NULL, NULL, 0);
 
 	PushActiveSnapshot(GetTransactionSnapshot());
 
@@ -201,7 +203,7 @@ flush_tuples(ContQueryWorkerState *state)
 	tuplestore_clear(state->plan_output);
 }
 
-#if (PG_VERSION_NUM / 100 != 1700)
+#if (PG_VERSION_NUM / 100 != 1800)
 #error init_plan() is a trimmed down copy of InitPlan() from the Postgres \
 	source code. You may want to update it.
 #endif
@@ -212,34 +214,54 @@ flush_tuples(ContQueryWorkerState *state)
 static void
 init_plan(ContQueryWorkerState *state)
 {
-	QueryDesc *query_desc = state->query_desc;
-	Plan *plan = query_desc->plannedstmt->planTree;
+	QueryDesc *queryDesc = state->query_desc;
+	PlannedStmt *plannedstmt = queryDesc->plannedstmt;
+	Plan *plan = queryDesc->plannedstmt->planTree;
+	List	   *rangeTable = plannedstmt->rtable;
+	EState	   *estate = queryDesc->estate;
+	PlanState  *planstate;
+	TupleDesc	tupType;
 	ListCell *lc;
 
 	/*
 	 * Do permissions checks
 	 */
-	ExecCheckPermissions(query_desc->plannedstmt->rtable,
-						 query_desc->plannedstmt->permInfos, true);
+	ExecCheckPermissions(rangeTable, plannedstmt->permInfos, true);
 
-	ExecInitRangeTable(query_desc->estate, query_desc->plannedstmt->rtable,
-		query_desc->plannedstmt->permInfos);
+	/*
+	 * initialize the node's execution state
+	 */
+	ExecInitRangeTable(estate, rangeTable, plannedstmt->permInfos,
+					   bms_copy(plannedstmt->unprunableRelids));
 
-	query_desc->estate->es_plannedstmt = query_desc->plannedstmt;
+	estate->es_plannedstmt = plannedstmt;
+	estate->es_part_prune_infos = plannedstmt->partPruneInfos;
 
-	foreach(lc, query_desc->plannedstmt->subplans)
+	foreach(lc, plannedstmt->subplans)
 	{
 		Plan *subplan = (Plan *) lfirst(lc);
 		PlanState  *subplanstate;
 
-		subplanstate = ExecInitNode(subplan, query_desc->estate, PIPELINE_EXEC_CONTINUOUS);
-		query_desc->estate->es_subplanstates = lappend(query_desc->estate->es_subplanstates, subplanstate);
+		subplanstate = ExecInitNode(subplan, estate, PIPELINE_EXEC_CONTINUOUS);
+		estate->es_subplanstates = lappend(estate->es_subplanstates, subplanstate);
 	}
 
-	query_desc->planstate = ExecInitNode(plan, query_desc->estate, PIPELINE_EXEC_CONTINUOUS);
-	query_desc->tupDesc = ExecGetResultType(query_desc->planstate);
+	/*
+	 * Initialize the private state information for all the nodes in the query
+	 * tree.  This opens files, allocates storage and leaves us ready to start
+	 * processing tuples.
+	 */
+	planstate = ExecInitNode(plan, estate, PIPELINE_EXEC_CONTINUOUS);
 
-	state->result_slot = MakeSingleTupleTableSlot(query_desc->tupDesc, &TTSOpsMinimalTuple);
+	/*
+	 * Get the tuple descriptor describing the type of tuples to return.
+	 */
+	tupType = ExecGetResultType(planstate);
+
+	queryDesc->tupDesc = tupType;
+	queryDesc->planstate = planstate;
+
+	state->result_slot = MakeSingleTupleTableSlot(queryDesc->tupDesc, &TTSOpsMinimalTuple);
 	tuplestore_clear(state->plan_output);
 }
 
@@ -282,8 +304,8 @@ cleanup_worker_state(ContQueryWorkerState *state)
 
 		if (query_desc->planstate == NULL)
 		{
-			AcquireRewriteLocks(copyObject(state->base.query->cvdef_orig), true, false);
-			AcquireRewriteLocks(copyObject(state->base.query->cvdef), true, false);
+			AcquireExecutorLocks(list_make1(state->query_desc->plannedstmt),
+								 true);
 			init_plan(state);
 		}
 
@@ -384,17 +406,8 @@ ContinuousQueryWorkerMain(void)
 					long secs;
 					int usecs;
 
-					/*
-					 * (Re-)acquire table locks for execution, since locks
-					 * acquired previously may have been released in
-					 * ContExecutorEndBatch() on a transaction commit. It may
-					 * modify the query tree with palloc-ed objects, so we
-					 * pass a copy allocated on a temporary context.
-					 */
-					AcquireRewriteLocks(copyObject(state->base.query->cvdef_orig),
-										true, false);
-					AcquireRewriteLocks(copyObject(state->base.query->cvdef),
-										true, false);
+					AcquireExecutorLocks(
+						list_make1(state->query_desc->plannedstmt), true);
 
 					/* initialize the plan for execution within this xact */
 					init_plan(state);

@@ -108,6 +108,8 @@ CREATE VIEW test_view AS
 Indexes:
     "test_view_mrel_pkey" PRIMARY KEY, btree ("$pk") WITH (fillfactor='50')
     "test_view_mrel_expr_idx" btree (pipelinedb.hash_group(_0)) WITH (fillfactor='50')
+Not-null constraints:
+    "test_view_mrel_$pk_not_null" NOT NULL "$pk"
 Options: fillfactor=50
 
 INSERT INTO test_stream (id, x) VALUES (1, 1.5), (2, 3.0), (3, 4.5);

@@ -269,6 +269,19 @@ sigterm_handler(SIGNAL_ARGS)
 	errno = save_errno;
 }
 
+/* SIGQUIT: killed by the postmaster */
+static void
+sigquit_handler(SIGNAL_ARGS)
+{
+	int save_errno = errno;
+
+	set_sigquit_flag();
+	if (MyProc)
+		SetLatch(MyLatch);
+
+	errno = save_errno;
+}
+
 /* SIGUSR2: wake up */
 static void
 sigusr2_handler(SIGNAL_ARGS)
@@ -478,8 +491,8 @@ cont_bgworker_main(Datum arg)
 	set_nice_priority();
 
 	/* Disable pg_store_plans for all PipelineDB workers */
-	set_config_option("pg_store_plans.track", "none", PGC_SU_BACKEND,
-					  PGC_S_SESSION, GUC_ACTION_SET, true, 0, false);
+	SetConfigOption("pg_store_plans.track", "none", PGC_SU_BACKEND,
+					PGC_S_SESSION);
 
 	run();
 
@@ -846,6 +859,7 @@ ContQuerySchedulerMain(Datum arg)
 	pqsignal(SIGTERM, sigterm_handler);
 	pqsignal(SIGUSR2, sigusr2_handler);
 	pqsignal(SIGSEGV, debug_segfault);
+	pqsignal(SIGQUIT, sigquit_handler);
 
 	BackgroundWorkerUnblockSignals();
 
@@ -866,7 +880,7 @@ ContQuerySchedulerMain(Datum arg)
 		rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH | WL_TIMEOUT, 1000, WAIT_EVENT_PG_SLEEP);
 		ResetLatch(MyLatch);
 
-		if (rc & WL_POSTMASTER_DEATH)
+		if (rc & WL_POSTMASTER_DEATH || get_sigquit_flag())
 			proc_exit(1);
 
 		CHECK_FOR_INTERRUPTS();

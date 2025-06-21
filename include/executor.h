@@ -91,4 +91,6 @@ extern void ExecuteContPlan(EState *estate, PlanState *planstate,
 			DestReceiver *dest,
 			bool execute_once);
 
+extern void AcquireExecutorLocks(List *stmt_list, bool acquire);
+
 #endif

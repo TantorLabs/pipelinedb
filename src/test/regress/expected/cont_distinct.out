@@ -54,6 +54,8 @@ SELECT * FROM test_distinct_count;
  $pk    | bigint |           | not null |         | plain    |              | 
 Indexes:
     "test_distinct_count_mrel_pkey" PRIMARY KEY, btree ("$pk") WITH (fillfactor='50')
+Not-null constraints:
+    "test_distinct_count_mrel_$pk_not_null" NOT NULL "$pk"
 Options: fillfactor=50
 
 SELECT * FROM test_distinct_count;
@@ -78,6 +80,8 @@ SELECT * FROM test_distinct_sw_count;
 Indexes:
     "test_distinct_sw_count_mrel_pkey" PRIMARY KEY, btree ("$pk") WITH (fillfactor='50')
     "test_distinct_sw_count_mrel_expr_idx" btree (pipelinedb.ls_hash_group(arrival_timestamp)) WITH (fillfactor='50')
+Not-null constraints:
+    "test_distinct_sw_count_mrel_$pk_not_null" NOT NULL "$pk"
 Options: fillfactor=50
 
 SELECT pg_sleep(1);

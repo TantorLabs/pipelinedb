@@ -1,28 +1,3 @@
--- array_sort function
-DROP FUNCTION IF EXISTS array_sort(anyarray);
-CREATE FUNCTION
-  array_sort(
-      array_vals_to_sort anyarray
-  )
-  RETURNS TABLE (
-    sorted_array anyarray
-  )
-  AS $BODY$
-    BEGIN
-      RETURN QUERY SELECT
-        ARRAY_AGG(val) AS sorted_array
-      FROM
-        (
-          SELECT
-            UNNEST(array_vals_to_sort) COLLATE "en_US.utf8" AS val
-          ORDER BY
-            val
-        ) AS sorted_vals
-      ;
-    END;
-  $BODY$
-LANGUAGE plpgsql;
-
 -- json_to_array function
 DROP FUNCTION IF EXISTS json_to_array(json);
 CREATE FUNCTION
@@ -81,13 +56,13 @@ CREATE VIEW test_json_agg AS SELECT key::text, json_agg(tval::text) AS j0, json_
 INSERT INTO cqobjectagg_stream (key, tval, fval, ival) VALUES ('x', 'text', 0.01, 42), ('x', 'more text', 0.01, 42), ('x', 'blaahhhh', 0.01, 42);
 INSERT INTO cqobjectagg_stream (key, tval, fval, ival) VALUES ('y', '4.2', 1.01, 42), ('z', '\"quoted\"', 2.01, 42), ('x', '', 0.01, 42), ('z', '2', '3', '4');
 
-SELECT key, array_sort(json_to_array(j0)) FROM test_json_agg ORDER BY key;
+SELECT key, array_sort(json_to_array(j0) COLLATE "en_US.utf8") FROM test_json_agg ORDER BY key;
 SELECT key, array_sort(json_to_array(j1)) FROM test_json_agg ORDER BY key;
 SELECT key, array_sort(json_to_array(j2)) FROM test_json_agg ORDER BY key;
 
 INSERT INTO cqobjectagg_stream (key, tval, fval, ival) VALUES ('x', 'text', 0.01, 42), ('y', 'more text', 0.01, 42), ('z', 'blaahhhh', 0.01, 42);
 
-SELECT key, array_sort(json_to_array(j0)) FROM test_json_agg ORDER BY key;
+SELECT key, array_sort(json_to_array(j0) COLLATE "en_US.utf8") FROM test_json_agg ORDER BY key;
 SELECT key, array_sort(json_to_array(j1)) FROM test_json_agg ORDER BY key;
 SELECT key, array_sort(json_to_array(j2)) FROM test_json_agg ORDER BY key;
 
@@ -121,13 +96,13 @@ CREATE VIEW test_jsonb_agg AS SELECT key::text, jsonb_agg(tval::text) AS j0, jso
 INSERT INTO cqobjectagg_stream (key, tval, fval, ival) VALUES ('x', 'text', 0.01, 42), ('x', 'more text', 0.01, 42), ('x', 'blaahhhh', 0.01, 42);
 INSERT INTO cqobjectagg_stream (key, tval, fval, ival) VALUES ('y', '4.2', 1.01, 42), ('z', '\"quoted\"', 2.01, 42), ('x', '', 0.01, 42), ('z', '2', '3', '4');
 
-SELECT key, array_sort(json_to_array(j0::json)) FROM test_jsonb_agg ORDER BY key;
+SELECT key, array_sort(json_to_array(j0::json) COLLATE "en_US.utf8") FROM test_jsonb_agg ORDER BY key;
 SELECT key, array_sort(json_to_array(j1::json)) FROM test_jsonb_agg ORDER BY key;
 SELECT key, array_sort(json_to_array(j2::json)) FROM test_jsonb_agg ORDER BY key;
 
 INSERT INTO cqobjectagg_stream (key, tval, fval, ival) VALUES ('x', 'text', 0.01, 42), ('y', 'more text', 0.01, 42), ('z', 'blaahhhh', 0.01, 42);
 
-SELECT key, array_sort(json_to_array(j0::json)) FROM test_jsonb_agg ORDER BY key;
+SELECT key, array_sort(json_to_array(j0::json) COLLATE "en_US.utf8") FROM test_jsonb_agg ORDER BY key;
 SELECT key, array_sort(json_to_array(j1::json)) FROM test_jsonb_agg ORDER BY key;
 SELECT key, array_sort(json_to_array(j2::json)) FROM test_jsonb_agg ORDER BY key;
 
@@ -155,7 +130,6 @@ SELECT n, array_sort(json_keys_array(jsonb_object_agg::json)) FROM test_jsonb_ob
 
 DROP FOREIGN TABLE cqobjectagg_stream CASCADE;
 
-DROP FUNCTION array_sort(anyarray);
 DROP FUNCTION json_to_array(json);
 DROP FUNCTION json_keys_array(json);
 

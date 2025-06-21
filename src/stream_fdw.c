@@ -161,8 +161,8 @@ GetStreamPaths(PlannerInfo *root, RelOptInfo *baserel, Oid relid)
 	startup_cost = baserel->baserestrictcost.startup;
 	total_cost = startup_cost + (cpu_tuple_cost * rows);
 
-	path = create_foreignscan_path(root, baserel, NULL, rows, startup_cost, total_cost,
-								   NIL, NULL, NULL, NIL, NIL);
+	path = create_foreignscan_path(root, baserel, NULL, rows, 0, startup_cost,
+								   total_cost, NIL, NULL, NULL, NIL, NIL);
 	add_path(baserel, (Path *) path);
 }
 
