@@ -20,20 +20,23 @@ def test_userset_sync(pipeline, clean_db):
     cur = conn.cursor()
     cur.execute('SET pipelinedb.stream_insert_level=sync_%s' %
           ('commit' if sync else 'receive'))
-    for i in xrange(NUM_INSERTS):
-      cur.execute('INSERT INTO s (x) VALUES (%d)' % (0 if sync else 1))
-      conn.commit()
+    for i in range(NUM_INSERTS):
+      try:
+        cur.execute('INSERT INTO s (x) VALUES (%d)' % (0 if sync else 1))
+        conn.commit()
+      except psycopg2.errors.UndefinedTable:
+        pass
     conn.close()
 
   sync = threading.Thread(target=insert, args=(True,))
-  async = threading.Thread(target=insert, args=(False,))
+  _async = threading.Thread(target=insert, args=(False,))
 
   start = time.time()
 
   sync.start()
-  async.start()
+  _async.start()
 
-  async.join()
+  _async.join()
   async_time = time.time() - start
   assert async_time < NUM_INSERTS * 0.1
 

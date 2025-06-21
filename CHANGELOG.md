@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.3.5] - 2025-06-18
 
 ### Added
 
@@ -15,6 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Regression introduced in 1.3.4 leading to assertion failures in reaper
   processes on cassert-enabled PostgreSQL builds (GL-40).
+- Two potential cases of uninitialized variables usage reported by Clang
+  (GL-33).
+- Development and testing scripts were ported to Python 3 (GL-41).
+- Combiner processes used the server timezone when defining range bounds for
+  automatically created partitions, if the partitioning attribute was of the
+  TIMESTAMP WITH TIME ZONE type. That resulted in problems caused by overlapping
+  or disjoint partition ranges after the default server timezone has changed for
+  whatever reasons. Fixed by sticking to UTC when rounding timestamptz values to
+  calculate partition range bounds (GL-44).
+- Installing Tantor PipelineDB on PostgreSQL 17 could lead to the "function
+  interval_combine() does not exist" error (GL-49).
+- The sliding-window queries could work incorrectly or lead to a combiner
+  process crash (GL-50).
 
 ## [1.3.4] - 2025-02-20
 

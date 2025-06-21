@@ -267,12 +267,12 @@ Server: pipelinedb
 -- These use a combine state column
 CREATE VIEW cvavg AS SELECT key, AVG(x) AS float_avg, AVG(y) AS int_avg, AVG(ts0 - ts1) AS internal_avg FROM create_cont_stream GROUP BY key;
 SELECT pg_get_viewdef('cvavg');
-                                                  pg_get_viewdef                                                  
-------------------------------------------------------------------------------------------------------------------
-  SELECT key,                                                                                                    +
-     float8_avg(float_avg) AS float_avg,                                                                         +
-     pipelinedb.finalize('pg_catalog.avg'::text, '{pg_catalog.int8}'::text[], int_avg, NULL::numeric) AS int_avg,+
-     interval_avg(internal_avg) AS internal_avg                                                                  +
+                                                         pg_get_viewdef                                                         
+--------------------------------------------------------------------------------------------------------------------------------
+  SELECT key,                                                                                                                  +
+     float8_avg(float_avg) AS float_avg,                                                                                       +
+     pipelinedb.finalize('pg_catalog.avg'::text, '{pg_catalog.int8}'::text[], int_avg, NULL::numeric) AS int_avg,              +
+     pipelinedb.finalize('pg_catalog.avg'::text, '{pg_catalog.interval}'::text[], internal_avg, NULL::interval) AS internal_avg+
     FROM ONLY cvavg_mrel;
 (1 row)
 
@@ -283,7 +283,7 @@ SELECT pg_get_viewdef('cvavg');
  key          | text               |           |          |         | extended |              | 
  float_avg    | double precision[] |           |          |         | extended |              | 
  int_avg      | bytea              |           |          |         | extended |              | 
- internal_avg | interval[]         |           |          |         | extended |              | 
+ internal_avg | bytea              |           |          |         | extended |              | 
  $pk          | bigint             |           | not null |         | plain    |              | 
 Indexes:
     "cvavg_mrel_pkey" PRIMARY KEY, btree ("$pk") WITH (fillfactor='50')

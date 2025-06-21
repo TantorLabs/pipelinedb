@@ -50,7 +50,7 @@ CREATE FUNCTION
 LANGUAGE plpgsql;
 -- json_to_array function
 DROP FUNCTION IF EXISTS json_to_array(json);
-NOTICE:  function json_to_array(json) does not exist, skipping
+NOTICE:  function json_to_array(pg_catalog.json) does not exist, skipping
 CREATE FUNCTION
   json_to_array(
       json_arr json
@@ -75,7 +75,7 @@ CREATE FUNCTION
 LANGUAGE plpgsql;
 -- json_keys_array function
 DROP FUNCTION IF EXISTS json_keys_array(json);
-NOTICE:  function json_keys_array(json) does not exist, skipping
+NOTICE:  function json_keys_array(pg_catalog.json) does not exist, skipping
 CREATE FUNCTION
   json_keys_array(
       json_obj json
