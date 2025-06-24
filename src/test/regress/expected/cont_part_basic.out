@@ -1,0 +1,449 @@
+-- Basic partitioning tests
+-- Helper function to list matrel partitions for a given CV, masking OIDs
+-- encoded into partition names by PipelineDB
+drop function if exists list_partitions(name);
+NOTICE:  function list_partitions(name) does not exist, skipping
+create function
+  list_partitions(
+    baserel name
+  )
+  returns table (
+    parent_schema name, parent name, child name, child_schema text
+  )
+  as $BODY$
+    begin
+      return query select
+        nmsp_parent.nspname as parent_schema,
+        parent.relname      as parent,
+        nmsp_child.nspname  as child,
+        regexp_replace(child.relname, 'mrel_[0-9]+_', 'mrel_OID_')       as child_schema
+      from pg_inherits
+        join pg_class parent        on pg_inherits.inhparent = parent.oid
+        join pg_class child         on pg_inherits.inhrelid   = child.oid
+        join pg_namespace nmsp_parent   on nmsp_parent.oid  = parent.relnamespace
+        join pg_namespace nmsp_child    on nmsp_child.oid   = child.relnamespace
+      where
+        parent.relname = baserel || '_mrel'
+      order by child_schema
+      ;
+    end;
+  $BODY$
+language plpgsql;
+create foreign table part_stream (
+  x int,
+  ts timestamp,
+  tstz timestamptz
+) server pipelinedb;
+-- not a timestamp/timestamptz column in partition_by
+create view cv_part_inv with (
+  action=materialize,
+  partition_by=x
+) as select count(*) from part_stream;
+ERROR:  partition_by must refer to a timestamp or timestamptz column
+-- misleading error message, see GL-4
+create view cv_part_inv with (
+  action=materialize,
+  partition_by=ts,
+  partition_duration='1 hour'
+) as select count(*) from part_stream;
+ERROR:  partition_by must refer to a timestamp or timestamptz column
+-- no error, see GL-6
+create view cv_part_inv with (
+  action=materialize,
+  partition_duration='1 hour'
+) as select ts, x from part_stream;
+drop view cv_part_inv;
+-- worker exits with failed to parse option "partition_duration", see GL-7
+create view cv_part_inv with (
+  action=transform,
+  partition_by=ts,
+  partition_duration='1 hour'
+) as select ts, x from part_stream;
+insert into part_stream (x, ts) values
+  (0, '2024-04-11 13:53:07.82049'),
+  (1, '2024-04-11 14:53:07.82049');
+WARNING:  a background worker crashed while processing this batch
+HINT:  Some of the tuples inserted in this batch might have been lost.
+drop view cv_part_inv;
+-- timestamp-partitioned CVs
+create view cv_part_ts_noagg_1h with (
+  action=materialize,
+  partition_by=ts,
+  partition_duration='1 hour'
+) as select ts, x from part_stream;
+create view cv_part_ts_agg_7s with (
+  action=materialize,
+  partition_by=ts,
+  partition_duration='7 seconds'
+) as select ts, count(*) from part_stream group by ts;
+create view cv_part_ts_agg_3m with (
+  action=materialize,
+  partition_by=ts,
+  partition_duration='3 minutes'
+) as select ts, count(*) from part_stream group by ts;
+create view cv_part_ts_agg_1h with (
+  action=materialize,
+  partition_by=ts,
+  partition_duration='1 hour'
+) as select ts, count(*) from part_stream group by ts;
+create view cv_part_ts_agg_2w with (
+  action=materialize,
+  partition_by=ts,
+  partition_duration='2 weeks'
+) as select ts, count(*) from part_stream group by ts;
+create view cv_part_ts_agg_1mo with (
+  action=materialize,
+  partition_by=ts,
+  partition_duration='1 month'
+) as select ts, count(*) from part_stream group by ts;
+create view cv_part_ts_agg_1y with (
+  action=materialize,
+  partition_by=ts,
+  partition_duration='1 year'
+) as select ts, count(*) from part_stream group by ts;
+create view cv_part_ts_agg_1y2m with (
+  action=materialize,
+  partition_by=ts,
+  partition_duration='1 year 2 months'
+) as select ts, count(*) from part_stream group by ts;
+-- timestamptz-partitioned CVs
+create view cv_part_tstz_noagg_1h with (
+  action=materialize,
+  partition_by=tstz,
+  partition_duration='1 hour'
+) as select tstz, x from part_stream;
+create view cv_part_tstz_agg_7s with (
+  action=materialize,
+  partition_by=tstz,
+  partition_duration='7 seconds'
+) as select tstz, count(*) from part_stream group by tstz;
+create view cv_part_tstz_agg_3m with (
+  action=materialize,
+  partition_by=tstz,
+  partition_duration='3 minutes'
+) as select tstz, count(*) from part_stream group by tstz;
+create view cv_part_tstz_agg_1h with (
+  action=materialize,
+  partition_by=tstz,
+  partition_duration='1 hour'
+) as select tstz, count(*) from part_stream group by tstz;
+create view cv_part_tstz_agg_2w with (
+  action=materialize,
+  partition_by=tstz,
+  partition_duration='2 weeks'
+) as select tstz, count(*) from part_stream group by tstz;
+create view cv_part_tstz_agg_1mo with (
+  action=materialize,
+  partition_by=tstz,
+  partition_duration='1 month'
+) as select tstz, count(*) from part_stream group by tstz;
+create view cv_part_tstz_agg_1y with (
+  action=materialize,
+  partition_by=tstz,
+  partition_duration='1 year'
+) as select tstz, count(*) from part_stream group by tstz;
+create view cv_part_tstz_agg_1y2m with (
+  action=materialize,
+  partition_by=tstz,
+  partition_duration='1 year 2 months'
+) as select tstz, count(*) from part_stream group by tstz;
+insert into part_stream (x, ts) values
+  (0, '2024-04-11 13:53:07.82049'),
+  (1, '2024-04-11 14:53:07.82049'),
+  (2, '2024-04-11 15:53:07.82049'),
+  (3, '2024-04-11 16:53:07.82049'),
+  (4, '2024-04-11 13:53:07.82049'),
+  (5, '2024-04-11 14:53:07.82049');
+insert into part_stream (x, tstz) values
+  (0, '2024-04-11 13:53:07.82049-03'),
+  (1, '2024-04-11 14:53:07.82049-02:30'),
+  (2, '2024-04-11 15:53:07.82049-01:15'),
+  (3, '2024-04-11 16:53:07.82049+01:15'),
+  (4, '2024-04-11 13:53:07.82049+02:30'),
+  (5, '2024-04-11 14:53:07.82049+03');
+select * from list_partitions('cv_part_ts_noagg_1h');
+ parent_schema |          parent          | child  |              child_schema              
+---------------+--------------------------+--------+----------------------------------------
+ public        | cv_part_ts_noagg_1h_mrel | public | mrel_OID_20240411130000_20240411140000
+ public        | cv_part_ts_noagg_1h_mrel | public | mrel_OID_20240411140000_20240411150000
+ public        | cv_part_ts_noagg_1h_mrel | public | mrel_OID_20240411150000_20240411160000
+ public        | cv_part_ts_noagg_1h_mrel | public | mrel_OID_20240411160000_20240411170000
+(4 rows)
+
+select * from cv_part_ts_noagg_1h;
+               ts               | x 
+--------------------------------+---
+ Thu Apr 11 13:53:07.82049 2024 | 0
+ Thu Apr 11 13:53:07.82049 2024 | 4
+ Thu Apr 11 14:53:07.82049 2024 | 1
+ Thu Apr 11 14:53:07.82049 2024 | 5
+ Thu Apr 11 15:53:07.82049 2024 | 2
+ Thu Apr 11 16:53:07.82049 2024 | 3
+(6 rows)
+
+select * from list_partitions('cv_part_ts_agg_7s');
+ parent_schema |         parent         | child  |              child_schema              
+---------------+------------------------+--------+----------------------------------------
+ public        | cv_part_ts_agg_7s_mrel | public | mrel_OID_20240411135305_20240411135312
+ public        | cv_part_ts_agg_7s_mrel | public | mrel_OID_20240411145303_20240411145310
+ public        | cv_part_ts_agg_7s_mrel | public | mrel_OID_20240411155301_20240411155308
+ public        | cv_part_ts_agg_7s_mrel | public | mrel_OID_20240411165306_20240411165313
+(4 rows)
+
+select * from cv_part_ts_agg_7s;
+               ts               | count 
+--------------------------------+-------
+ Thu Apr 11 13:53:07.82049 2024 |     2
+ Thu Apr 11 14:53:07.82049 2024 |     2
+ Thu Apr 11 15:53:07.82049 2024 |     1
+ Thu Apr 11 16:53:07.82049 2024 |     1
+(4 rows)
+
+select * from list_partitions('cv_part_ts_agg_3m');
+ parent_schema |         parent         | child  |              child_schema              
+---------------+------------------------+--------+----------------------------------------
+ public        | cv_part_ts_agg_3m_mrel | public | mrel_OID_20240411135100_20240411135400
+ public        | cv_part_ts_agg_3m_mrel | public | mrel_OID_20240411145100_20240411145400
+ public        | cv_part_ts_agg_3m_mrel | public | mrel_OID_20240411155100_20240411155400
+ public        | cv_part_ts_agg_3m_mrel | public | mrel_OID_20240411165100_20240411165400
+(4 rows)
+
+select * from cv_part_ts_agg_3m;
+               ts               | count 
+--------------------------------+-------
+ Thu Apr 11 13:53:07.82049 2024 |     2
+ Thu Apr 11 14:53:07.82049 2024 |     2
+ Thu Apr 11 15:53:07.82049 2024 |     1
+ Thu Apr 11 16:53:07.82049 2024 |     1
+(4 rows)
+
+select * from list_partitions('cv_part_ts_agg_1h');
+ parent_schema |         parent         | child  |              child_schema              
+---------------+------------------------+--------+----------------------------------------
+ public        | cv_part_ts_agg_1h_mrel | public | mrel_OID_20240411130000_20240411140000
+ public        | cv_part_ts_agg_1h_mrel | public | mrel_OID_20240411140000_20240411150000
+ public        | cv_part_ts_agg_1h_mrel | public | mrel_OID_20240411150000_20240411160000
+ public        | cv_part_ts_agg_1h_mrel | public | mrel_OID_20240411160000_20240411170000
+(4 rows)
+
+select * from cv_part_ts_agg_1h;
+               ts               | count 
+--------------------------------+-------
+ Thu Apr 11 13:53:07.82049 2024 |     2
+ Thu Apr 11 14:53:07.82049 2024 |     2
+ Thu Apr 11 15:53:07.82049 2024 |     1
+ Thu Apr 11 16:53:07.82049 2024 |     1
+(4 rows)
+
+select * from list_partitions('cv_part_ts_agg_2w');
+ parent_schema |         parent         | child  |              child_schema              
+---------------+------------------------+--------+----------------------------------------
+ public        | cv_part_ts_agg_2w_mrel | public | mrel_OID_20240406000000_20240420000000
+(1 row)
+
+select * from cv_part_ts_agg_2w;
+               ts               | count 
+--------------------------------+-------
+ Thu Apr 11 15:53:07.82049 2024 |     1
+ Thu Apr 11 13:53:07.82049 2024 |     2
+ Thu Apr 11 16:53:07.82049 2024 |     1
+ Thu Apr 11 14:53:07.82049 2024 |     2
+(4 rows)
+
+select * from list_partitions('cv_part_ts_agg_1mo');
+ parent_schema |         parent          | child  |              child_schema              
+---------------+-------------------------+--------+----------------------------------------
+ public        | cv_part_ts_agg_1mo_mrel | public | mrel_OID_20240401000000_20240501000000
+(1 row)
+
+select * from cv_part_ts_agg_1mo;
+               ts               | count 
+--------------------------------+-------
+ Thu Apr 11 15:53:07.82049 2024 |     1
+ Thu Apr 11 13:53:07.82049 2024 |     2
+ Thu Apr 11 16:53:07.82049 2024 |     1
+ Thu Apr 11 14:53:07.82049 2024 |     2
+(4 rows)
+
+select * from list_partitions('cv_part_ts_agg_1y');
+ parent_schema |         parent         | child  |              child_schema              
+---------------+------------------------+--------+----------------------------------------
+ public        | cv_part_ts_agg_1y_mrel | public | mrel_OID_20240101000000_20241231060000
+(1 row)
+
+select * from cv_part_ts_agg_1y;
+               ts               | count 
+--------------------------------+-------
+ Thu Apr 11 15:53:07.82049 2024 |     1
+ Thu Apr 11 13:53:07.82049 2024 |     2
+ Thu Apr 11 16:53:07.82049 2024 |     1
+ Thu Apr 11 14:53:07.82049 2024 |     2
+(4 rows)
+
+select * from list_partitions('cv_part_ts_agg_1y2m');
+ parent_schema |          parent          | child  |              child_schema              
+---------------+--------------------------+--------+----------------------------------------
+ public        | cv_part_ts_agg_1y2m_mrel | public | mrel_OID_20230415000000_20240613060000
+(1 row)
+
+select * from cv_part_ts_agg_1y2m;
+               ts               | count 
+--------------------------------+-------
+ Thu Apr 11 15:53:07.82049 2024 |     1
+ Thu Apr 11 13:53:07.82049 2024 |     2
+ Thu Apr 11 16:53:07.82049 2024 |     1
+ Thu Apr 11 14:53:07.82049 2024 |     2
+(4 rows)
+
+select * from list_partitions('cv_part_tstz_noagg_1h');
+ parent_schema |           parent           | child  |              child_schema              
+---------------+----------------------------+--------+----------------------------------------
+ public        | cv_part_tstz_noagg_1h_mrel | public | mrel_OID_20240411140000_20240411150000
+ public        | cv_part_tstz_noagg_1h_mrel | public | mrel_OID_20240411180000_20240411190000
+ public        | cv_part_tstz_noagg_1h_mrel | public | mrel_OID_20240411190000_20240411200000
+ public        | cv_part_tstz_noagg_1h_mrel | public | mrel_OID_20240411200000_20240411210000
+(4 rows)
+
+select * from cv_part_tstz_noagg_1h;
+                tstz                | x 
+------------------------------------+---
+ Thu Apr 11 04:23:07.82049 2024 PDT | 4
+ Thu Apr 11 04:53:07.82049 2024 PDT | 5
+ Thu Apr 11 08:38:07.82049 2024 PDT | 3
+ Thu Apr 11 09:53:07.82049 2024 PDT | 0
+ Thu Apr 11 10:23:07.82049 2024 PDT | 1
+ Thu Apr 11 10:08:07.82049 2024 PDT | 2
+(6 rows)
+
+select * from list_partitions('cv_part_tstz_agg_7s');
+ parent_schema |          parent          | child  |              child_schema              
+---------------+--------------------------+--------+----------------------------------------
+ public        | cv_part_tstz_agg_7s_mrel | public | mrel_OID_20240411142303_20240411142310
+ public        | cv_part_tstz_agg_7s_mrel | public | mrel_OID_20240411145302_20240411145309
+ public        | cv_part_tstz_agg_7s_mrel | public | mrel_OID_20240411183805_20240411183812
+ public        | cv_part_tstz_agg_7s_mrel | public | mrel_OID_20240411195306_20240411195313
+ public        | cv_part_tstz_agg_7s_mrel | public | mrel_OID_20240411200802_20240411200809
+ public        | cv_part_tstz_agg_7s_mrel | public | mrel_OID_20240411202305_20240411202312
+(6 rows)
+
+select * from cv_part_tstz_agg_7s;
+                tstz                | count 
+------------------------------------+-------
+ Thu Apr 11 04:23:07.82049 2024 PDT |     1
+ Thu Apr 11 04:53:07.82049 2024 PDT |     1
+ Thu Apr 11 08:38:07.82049 2024 PDT |     1
+ Thu Apr 11 09:53:07.82049 2024 PDT |     1
+ Thu Apr 11 10:08:07.82049 2024 PDT |     1
+ Thu Apr 11 10:23:07.82049 2024 PDT |     1
+(6 rows)
+
+select * from list_partitions('cv_part_tstz_agg_3m');
+ parent_schema |          parent          | child  |              child_schema              
+---------------+--------------------------+--------+----------------------------------------
+ public        | cv_part_tstz_agg_3m_mrel | public | mrel_OID_20240411142100_20240411142400
+ public        | cv_part_tstz_agg_3m_mrel | public | mrel_OID_20240411145100_20240411145400
+ public        | cv_part_tstz_agg_3m_mrel | public | mrel_OID_20240411183600_20240411183900
+ public        | cv_part_tstz_agg_3m_mrel | public | mrel_OID_20240411195100_20240411195400
+ public        | cv_part_tstz_agg_3m_mrel | public | mrel_OID_20240411200600_20240411200900
+ public        | cv_part_tstz_agg_3m_mrel | public | mrel_OID_20240411202100_20240411202400
+(6 rows)
+
+select * from cv_part_tstz_agg_3m;
+                tstz                | count 
+------------------------------------+-------
+ Thu Apr 11 04:23:07.82049 2024 PDT |     1
+ Thu Apr 11 04:53:07.82049 2024 PDT |     1
+ Thu Apr 11 08:38:07.82049 2024 PDT |     1
+ Thu Apr 11 09:53:07.82049 2024 PDT |     1
+ Thu Apr 11 10:08:07.82049 2024 PDT |     1
+ Thu Apr 11 10:23:07.82049 2024 PDT |     1
+(6 rows)
+
+select * from list_partitions('cv_part_tstz_agg_1h');
+ parent_schema |          parent          | child  |              child_schema              
+---------------+--------------------------+--------+----------------------------------------
+ public        | cv_part_tstz_agg_1h_mrel | public | mrel_OID_20240411140000_20240411150000
+ public        | cv_part_tstz_agg_1h_mrel | public | mrel_OID_20240411180000_20240411190000
+ public        | cv_part_tstz_agg_1h_mrel | public | mrel_OID_20240411190000_20240411200000
+ public        | cv_part_tstz_agg_1h_mrel | public | mrel_OID_20240411200000_20240411210000
+(4 rows)
+
+select * from cv_part_tstz_agg_1h;
+                tstz                | count 
+------------------------------------+-------
+ Thu Apr 11 04:23:07.82049 2024 PDT |     1
+ Thu Apr 11 04:53:07.82049 2024 PDT |     1
+ Thu Apr 11 08:38:07.82049 2024 PDT |     1
+ Thu Apr 11 09:53:07.82049 2024 PDT |     1
+ Thu Apr 11 10:08:07.82049 2024 PDT |     1
+ Thu Apr 11 10:23:07.82049 2024 PDT |     1
+(6 rows)
+
+select * from list_partitions('cv_part_tstz_agg_2w');
+ parent_schema |          parent          | child  |              child_schema              
+---------------+--------------------------+--------+----------------------------------------
+ public        | cv_part_tstz_agg_2w_mrel | public | mrel_OID_20240406030000_20240420030000
+(1 row)
+
+select * from cv_part_tstz_agg_2w;
+                tstz                | count 
+------------------------------------+-------
+ Thu Apr 11 08:38:07.82049 2024 PDT |     1
+ Thu Apr 11 04:23:07.82049 2024 PDT |     1
+ Thu Apr 11 10:08:07.82049 2024 PDT |     1
+ Thu Apr 11 04:53:07.82049 2024 PDT |     1
+ Thu Apr 11 09:53:07.82049 2024 PDT |     1
+ Thu Apr 11 10:23:07.82049 2024 PDT |     1
+(6 rows)
+
+select * from list_partitions('cv_part_tstz_agg_1mo');
+ parent_schema |          parent           | child  |              child_schema              
+---------------+---------------------------+--------+----------------------------------------
+ public        | cv_part_tstz_agg_1mo_mrel | public | mrel_OID_20240401000000_20240501000000
+(1 row)
+
+select * from cv_part_tstz_agg_1mo;
+                tstz                | count 
+------------------------------------+-------
+ Thu Apr 11 08:38:07.82049 2024 PDT |     1
+ Thu Apr 11 04:23:07.82049 2024 PDT |     1
+ Thu Apr 11 10:08:07.82049 2024 PDT |     1
+ Thu Apr 11 04:53:07.82049 2024 PDT |     1
+ Thu Apr 11 09:53:07.82049 2024 PDT |     1
+ Thu Apr 11 10:23:07.82049 2024 PDT |     1
+(6 rows)
+
+select * from list_partitions('cv_part_tstz_agg_1y');
+ parent_schema |          parent          | child  |              child_schema              
+---------------+--------------------------+--------+----------------------------------------
+ public        | cv_part_tstz_agg_1y_mrel | public | mrel_OID_20240101030000_20241231090000
+(1 row)
+
+select * from cv_part_tstz_agg_1y;
+                tstz                | count 
+------------------------------------+-------
+ Thu Apr 11 08:38:07.82049 2024 PDT |     1
+ Thu Apr 11 04:23:07.82049 2024 PDT |     1
+ Thu Apr 11 10:08:07.82049 2024 PDT |     1
+ Thu Apr 11 04:53:07.82049 2024 PDT |     1
+ Thu Apr 11 09:53:07.82049 2024 PDT |     1
+ Thu Apr 11 10:23:07.82049 2024 PDT |     1
+(6 rows)
+
+select * from list_partitions('cv_part_tstz_agg_1y2m');
+ parent_schema |           parent           | child  |              child_schema              
+---------------+----------------------------+--------+----------------------------------------
+ public        | cv_part_tstz_agg_1y2m_mrel | public | mrel_OID_20230415030000_20240613090000
+(1 row)
+
+select * from cv_part_tstz_agg_1y2m;
+                tstz                | count 
+------------------------------------+-------
+ Thu Apr 11 08:38:07.82049 2024 PDT |     1
+ Thu Apr 11 04:23:07.82049 2024 PDT |     1
+ Thu Apr 11 10:08:07.82049 2024 PDT |     1
+ Thu Apr 11 04:53:07.82049 2024 PDT |     1
+ Thu Apr 11 09:53:07.82049 2024 PDT |     1
+ Thu Apr 11 10:23:07.82049 2024 PDT |     1
+(6 rows)
+
