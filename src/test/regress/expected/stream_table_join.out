@@ -1,0 +1,701 @@
+CREATE FOREIGN TABLE test_stj_stream (id int, data jsonb, val float8, col1 int, col2 int, col0 int) SERVER pipelinedb;
+-- Simple joins
+CREATE TABLE test_stj_t0 (tid integer, data text, val float8);
+INSERT INTO test_stj_t0 (tid, data, val) VALUES (0, '0', 0.1);
+INSERT INTO test_stj_t0 (tid, data, val) VALUES (0, '1', 1.2);
+INSERT INTO test_stj_t0 (tid, data, val) VALUES (1, '2', 2.3);
+INSERT INTO test_stj_t0 (tid, data, val) VALUES (1, '3', 3.4);
+INSERT INTO test_stj_t0 (tid, data, val) VALUES (2, '4', 4.5);
+INSERT INTO test_stj_t0 (tid, data, val) VALUES (2, '5', 5.6);
+INSERT INTO test_stj_t0 (tid, data, val) VALUES (3, '6', 6.7);
+INSERT INTO test_stj_t0 (tid, data, val) VALUES (4, '0', 4.0);
+INSERT INTO test_stj_t0 (tid, data, val) VALUES (0, '7', -2.3);
+INSERT INTO test_stj_t0 (tid, data, val) VALUES (0, '8', -3.4);
+INSERT INTO test_stj_t0 (tid, data, val) VALUES (1, '9', -4.5);
+INSERT INTO test_stj_t0 (tid, data, val) VALUES (2, '10', -5.6);
+INSERT INTO test_stj_t0 (tid, data, val) VALUES (7, '[0, 1]', -6.7);
+INSERT INTO test_stj_t0 (tid, data, val) VALUES (7, '"0"', -6.7);
+INSERT INTO test_stj_t0 (tid, data, val) VALUES (7, '"1"', -6.7);
+SELECT pg_sleep(0.1);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+CREATE VIEW test_stj0 AS SELECT s.id::integer, t.tid, t.data FROM test_stj_stream s JOIN test_stj_t0 t ON s.id = t.tid;
+NOTICE:  consider creating an index on t.tid for improved stream-table join performance
+CREATE VIEW test_stj1 AS SELECT s.id::integer, t.tid, t.data, s.data as jdata FROM test_stj_t0 t JOIN test_stj_stream s ON s.id = t.tid WHERE s.data::jsonb = '[0, 1]';
+NOTICE:  consider creating an index on t.tid for improved stream-table join performance
+CREATE VIEW test_stj2 AS SELECT test_stj_stream.id::integer, test_stj_t0.val FROM test_stj_t0, test_stj_stream WHERE test_stj_t0.tid = 0;
+NOTICE:  consider creating an index on test_stj_t0.tid for improved stream-table join performance
+CREATE VIEW test_stj3 AS SELECT s.id::integer, t.val, s.data::json FROM test_stj_t0 t JOIN test_stj_stream s ON s.id = t.tid AND s.id = t.val;
+NOTICE:  consider creating an index on t.tid for improved stream-table join performance
+NOTICE:  consider creating an index on t.val for improved stream-table join performance
+INSERT INTO test_stj_stream (id, data) VALUES (0, '[0, 1]');
+INSERT INTO test_stj_stream (id, data) VALUES (0, '{"key": 4}');
+INSERT INTO test_stj_stream (id, data) VALUES (1, '4');
+INSERT INTO test_stj_stream (id, data) VALUES (2, '[1, 0]');
+INSERT INTO test_stj_stream (id, data) VALUES (2, '{ "key": [0, 1] }');
+INSERT INTO test_stj_stream (id, data) VALUES (3, '42');
+INSERT INTO test_stj_stream (id, data) VALUES (4, '"matched"');
+SELECT * FROM test_stj0 ORDER BY id;
+ id | tid | data 
+----+-----+------
+  0 |   0 | 0
+  0 |   0 | 1
+  0 |   0 | 7
+  0 |   0 | 8
+  0 |   0 | 0
+  0 |   0 | 1
+  0 |   0 | 7
+  0 |   0 | 8
+  1 |   1 | 2
+  1 |   1 | 3
+  1 |   1 | 9
+  2 |   2 | 4
+  2 |   2 | 5
+  2 |   2 | 10
+  2 |   2 | 4
+  2 |   2 | 5
+  2 |   2 | 10
+  3 |   3 | 6
+  4 |   4 | 0
+(19 rows)
+
+SELECT * FROM test_stj1 ORDER BY id;
+ id | tid | data | jdata  
+----+-----+------+--------
+  0 |   0 | 0    | [0, 1]
+  0 |   0 | 1    | [0, 1]
+  0 |   0 | 7    | [0, 1]
+  0 |   0 | 8    | [0, 1]
+(4 rows)
+
+SELECT * FROM test_stj2 ORDER BY id, val;
+ id | val  
+----+------
+  0 | -3.4
+  0 | -3.4
+  0 | -2.3
+  0 | -2.3
+  0 |  0.1
+  0 |  0.1
+  0 |  1.2
+  0 |  1.2
+  1 | -3.4
+  1 | -2.3
+  1 |  0.1
+  1 |  1.2
+  2 | -3.4
+  2 | -3.4
+  2 | -2.3
+  2 | -2.3
+  2 |  0.1
+  2 |  0.1
+  2 |  1.2
+  2 |  1.2
+  3 | -3.4
+  3 | -2.3
+  3 |  0.1
+  3 |  1.2
+  4 | -3.4
+  4 | -2.3
+  4 |  0.1
+  4 |  1.2
+(28 rows)
+
+SELECT * FROM test_stj3 ORDER BY id;
+ id | val |   data    
+----+-----+-----------
+  4 |   4 | "matched"
+(1 row)
+
+-- Stream-table joins involving multiple tables
+CREATE TABLE test_stj_t1 (jid jsonb, data jsonb);
+INSERT INTO test_stj_t1 (jid, data) VALUES ('[0, 1]', '"json string"');
+INSERT INTO test_stj_t1 (jid, data) VALUES ('"0"', '71');
+INSERT INTO test_stj_t1 (jid, data) VALUES ('"1"', '[1, 2, 4, 8, 16]');
+INSERT INTO test_stj_t1 (jid, data) VALUES ('[1, 0]', '{"key": "v"}');
+INSERT INTO test_stj_t1 (jid, data) VALUES ('2', '["one", "two", "three"]');
+INSERT INTO test_stj_t1 (jid, data) VALUES ('3', '["four", 5, "six"]');
+INSERT INTO test_stj_t1 (jid, data) VALUES ('4', '{"k0": {"k1": "v"}}');
+INSERT INTO test_stj_t1 (jid, data) VALUES ('{}', '0');
+INSERT INTO test_stj_t1 (jid, data) VALUES ('[0, 1]', '["strrrr", "iiing"]');
+INSERT INTO test_stj_t1 (jid, data) VALUES ('[]', '[{}, {}]');
+INSERT INTO test_stj_t1 (jid, data) VALUES ('"0"', '[[]]');
+INSERT INTO test_stj_t1 (jid, data) VALUES ('"1"', '[32, 64, 128]');
+SELECT pg_sleep(0.1);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+CREATE VIEW test_stj4 AS SELECT t1.jid, s.data::jsonb AS stream_data, t0.data as table_data FROM test_stj_t1 t1 JOIN test_stj_stream s ON t1.jid = s.data JOIN test_stj_t0 t0 ON t0.data::jsonb = t1.jid;
+NOTICE:  consider creating an index on t1.jid for improved stream-table join performance
+NOTICE:  consider creating an index on t0.data for improved stream-table join performance
+INSERT INTO test_stj_stream (id, data) VALUES (0, '[0, 1]');
+INSERT INTO test_stj_stream (id, data) VALUES (0, '{"key": 4}');
+INSERT INTO test_stj_stream (id, data) VALUES (1, '4');
+INSERT INTO test_stj_stream (id, data) VALUES (2, '[1, 0]');
+INSERT INTO test_stj_stream (id, data) VALUES (2, '{ "key": [0, 1] }');
+INSERT INTO test_stj_stream (id, data) VALUES (3, '42');
+INSERT INTO test_stj_stream (id, data) VALUES (4, '"not here"');
+SELECT * FROM test_stj4 ORDER BY jid;
+  jid   | stream_data | table_data 
+--------+-------------+------------
+ 4      | 4           | 4
+ [0, 1] | [0, 1]      | [0, 1]
+ [0, 1] | [0, 1]      | [0, 1]
+(3 rows)
+
+-- Stream-table joins with GROUP BYs and aggregates
+CREATE TABLE test_stj_t2 (id integer, str text, val float);
+INSERT INTO test_stj_t2 (id, str, val) VALUES (0, 'str0', 101.1);
+INSERT INTO test_stj_t2 (id, str, val) VALUES (1, 'str1', 202.2);
+INSERT INTO test_stj_t2 (id, str, val) VALUES (2, 'str2', 42.42);
+INSERT INTO test_stj_t2 (id, str, val) VALUES (3, 'not here', 1000.1);
+SELECT pg_sleep(0.1);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+CREATE VIEW test_stj5 AS SELECT s.id::integer, t.str, sum(s.val::float8 + t.val) FROM test_stj_stream s JOIN test_stj_t2 t ON s.id = t.id GROUP BY s.id, t.str;
+NOTICE:  consider creating an index on t.id for improved stream-table join performance
+INSERT INTO test_stj_stream (id, val) VALUES (0, -101.1);
+INSERT INTO test_stj_stream (id, val) VALUES (1, -202.2);
+INSERT INTO test_stj_stream (id, val) VALUES (4, 2000.201);
+INSERT INTO test_stj_t2 (id, str, val) VALUES (5, 'joined', 52.0);
+SELECT pg_sleep(0.1);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+INSERT INTO test_stj_stream (id, val) VALUES (5, 0.52);
+SELECT * FROM test_stj5 ORDER BY id;
+ id |  str   |  sum  
+----+--------+-------
+  0 | str0   |     0
+  1 | str1   |     0
+  5 | joined | 52.52
+(3 rows)
+
+CREATE TABLE test_stj_t3 (col0 integer, col1 integer, col2 integer, col3 integer);
+INSERT INTO test_stj_t3 (col0, col1, col2, col3) VALUES (0, 0, 0, 42);
+INSERT INTO test_stj_t3 (col0, col1, col2, col3) VALUES (0, 1, 1, 1000);
+SELECT pg_sleep(0.1);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+CREATE VIEW test_stj6 AS SELECT t.col2, sum(s.col0::integer + t.col3) FROM test_stj_stream s JOIN test_stj_t3 t ON s.col1::integer = t.col1 GROUP BY t.col2;
+NOTICE:  consider creating an index on t.col1 for improved stream-table join performance
+INSERT INTO test_stj_stream (col0, col1, col2) VALUES (400, 1, 0);
+INSERT INTO test_stj_stream (col0, col1, col2) VALUES (0, 0, 0);
+INSERT INTO test_stj_stream (col0, col1, col2) VALUES (-1200, 1, 0);
+SELECT * FROM test_stj6 ORDER BY col2;
+ col2 | sum  
+------+------
+    0 |   42
+    1 | 1200
+(2 rows)
+
+CREATE VIEW stj_no_tl AS SELECT COUNT(*)
+FROM test_stj_stream JOIN test_stj_t0 ON test_stj_stream.id::integer = test_stj_t0.tid;
+NOTICE:  consider creating an index on test_stj_t0.tid for improved stream-table join performance
+INSERT INTO test_stj_stream (id) VALUES (0);
+SELECT * FROM stj_no_tl;
+ count 
+-------
+     4
+(1 row)
+
+CREATE TABLE test_stj_location (locid integer);
+CREATE TABLE test_stj_blocks (locid integer, ip inet);
+CREATE INDEX loc_index ON test_stj_location(locid);
+INSERT INTO test_stj_location (locid) VALUES (42);
+INSERT INTO test_stj_blocks (locid, ip) VALUES (42, '0.0.0.0');
+CREATE VIEW test_stj7 AS
+SELECT (test_stj_stream.data::jsonb->>'key')::text, avg((test_stj_stream.data::jsonb->>'value')::decimal), test_stj_location.locid
+FROM test_stj_stream, test_stj_blocks JOIN test_stj_location USING(locid)
+WHERE test_stj_blocks.ip = (test_stj_stream.data::jsonb->>'ip')::inet
+GROUP BY  (test_stj_stream.data::jsonb->>'key')::text, test_stj_location.locid;
+NOTICE:  consider creating an index on test_stj_blocks.ip for improved stream-table join performance
+INSERT INTO test_stj_stream (data) VALUES ('{"key": "1", "value": 42.42, "ip": "0.0.0.0"}');
+INSERT INTO test_stj_stream (data) VALUES ('{"key": "1", "value": 420.42, "ip": "0.0.0.0"}');
+INSERT INTO test_stj_stream (data) VALUES ('{"key": "2", "value": 4200.42, "ip": "0.0.0.0"}');
+INSERT INTO test_stj_stream (data) VALUES ('{"key": "2", "value": 42020.42, "ip": "0.0.0.0"}');
+SELECT pg_sleep(0.1);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+SELECT * FROM test_stj7;
+ text |         avg          | locid 
+------+----------------------+-------
+ 1    | 231.4200000000000000 |    42
+ 2    |   23110.420000000000 |    42
+(2 rows)
+
+CREATE VIEW test_stj8 AS
+SELECT
+(test_stj_stream.data::jsonb#>>'{header,game}')::text as game,
+(test_stj_stream.data::jsonb#>>'{body,peripheryID}')::text as peripheryID,
+to_timestamp((test_stj_stream.data::jsonb#>>'{body,time}')::int) as created_at,
+avg((test_stj_stream.data::jsonb#>>'{body,avgRoundTripTime}')::decimal) as avgrtt,
+test_stj_location.locid
+FROM test_stj_stream, test_stj_blocks JOIN test_stj_location USING(locid)
+WHERE test_stj_blocks.ip = (test_stj_stream.data::jsonb#>>'{body,clientIP}')::inet
+GROUP BY game, peripheryID, created_at, test_stj_location.locid;
+NOTICE:  consider creating an index on test_stj_blocks.ip for improved stream-table join performance
+INSERT INTO test_stj_stream (data) VALUES ('{"header": {"ver": 1, "op_type": 402, "op_asset": null, "spa_id": 6333813, "game": "wot", "creation_time": 1427713483, "reserved1": null, "reserved2": null}, "body": {"peripheryID": 101, "arenaID": 2128201, "arenaGeometryID": 24, "arenaGameplayID": 1, "time": 1427712977, "clientIP": "0.0.0.0", "packetsReceived": 6264, "packetsSent": 5059, "packetsResent": 4, "minRoundTripTime": 0.043896623, "maxRoundTripTime": 0.68855155, "avgRoundTripTime": 10}}');
+INSERT INTO test_stj_stream (data) VALUES ('{"header": {"ver": 1, "op_type": 402, "op_asset": null, "spa_id": 6333813, "game": "wot", "creation_time": 1427713483, "reserved1": null, "reserved2": null}, "body": {"peripheryID": 101, "arenaID": 2128201, "arenaGeometryID": 24, "arenaGameplayID": 1, "time": 1427712977, "clientIP": "0.0.0.0", "packetsReceived": 6264, "packetsSent": 5059, "packetsResent": 4, "minRoundTripTime": 0.043896623, "maxRoundTripTime": 0.68855155, "avgRoundTripTime": 20}}');
+INSERT INTO test_stj_stream (data) VALUES ('{"header": {"ver": 1, "op_type": 402, "op_asset": null, "spa_id": 6333813, "game": "wot", "creation_time": 1427713483, "reserved1": null, "reserved2": null}, "body": {"peripheryID": 101, "arenaID": 2128201, "arenaGeometryID": 24, "arenaGameplayID": 1, "time": 1427712977, "clientIP": "0.0.0.0", "packetsReceived": 6264, "packetsSent": 5059, "packetsResent": 4, "minRoundTripTime": 0.043896623, "maxRoundTripTime": 0.68855155, "avgRoundTripTime": 30}}');
+SELECT pg_sleep(0.1);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+SELECT * FROM test_stj8;
+ game | peripheryid |          created_at          |       avgrtt        | locid 
+------+-------------+------------------------------+---------------------+-------
+ wot  | 101         | Mon Mar 30 03:56:17 2015 PDT | 20.0000000000000000 |    42
+(1 row)
+
+DROP FOREIGN TABLE test_stj_stream CASCADE;
+NOTICE:  drop cascades to 10 other objects
+DETAIL:  drop cascades to view test_stj0
+drop cascades to view test_stj1
+drop cascades to view test_stj2
+drop cascades to view test_stj3
+drop cascades to view test_stj4
+drop cascades to view test_stj5
+drop cascades to view test_stj6
+drop cascades to view stj_no_tl
+drop cascades to view test_stj7
+drop cascades to view test_stj8
+-- Regression test for join with empty table.
+CREATE FOREIGN TABLE test_stj_empty_stream (x int) SERVER pipelinedb;
+CREATE TABLE test_stj_empty (x int);
+CREATE VIEW test_stj_empty_join AS SELECT test_stj_empty_stream.x::int FROM test_stj_empty_stream JOIN test_stj_empty ON test_stj_empty_stream.x = test_stj_empty.x;
+NOTICE:  consider creating an index on test_stj_empty.x for improved stream-table join performance
+INSERT INTO test_stj_empty_stream (x) VALUES (0);
+SELECT * FROM test_stj_empty_join;
+ x 
+---
+(0 rows)
+
+-- STJ involving sliding windows
+CREATE FOREIGN TABLE test_stj_sw0_s (x integer, y integer) SERVER pipelinedb;
+CREATE TABLE test_stj_sw0_t AS SELECT x, x AS y FROM generate_series(0, 99) AS x;
+CREATE VIEW test_stj_sw0 AS SELECT s.x, s.y, t.x AS t_x, count(*)
+FROM test_stj_sw0_s s JOIN test_stj_sw0_t t
+USING (x)
+WHERE (s.arrival_timestamp > clock_timestamp() - interval '4 seconds')
+GROUP by s.x, s.y, t_x;
+INSERT INTO test_stj_sw0_s (x, y) SELECT x, x AS y FROM generate_series(0, 9) AS x;
+INSERT INTO test_stj_sw0_s (x, y) SELECT x, x AS y FROM generate_series(0, 9) AS x;
+INSERT INTO test_stj_sw0_s (x, y) SELECT x, x AS y FROM generate_series(0, 9) AS x;
+SELECT * FROM test_stj_sw0 ORDER BY x, y, t_x;
+ x | y | t_x | count 
+---+---+-----+-------
+ 0 | 0 |   0 |     3
+ 1 | 1 |   1 |     3
+ 2 | 2 |   2 |     3
+ 3 | 3 |   3 |     3
+ 4 | 4 |   4 |     3
+ 5 | 5 |   5 |     3
+ 6 | 6 |   6 |     3
+ 7 | 7 |   7 |     3
+ 8 | 8 |   8 |     3
+ 9 | 9 |   9 |     3
+(10 rows)
+
+SELECT pg_sleep(5);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+SELECT * FROM test_stj_sw0 ORDER BY x, y, t_x;
+ x | y | t_x | count 
+---+---+-----+-------
+(0 rows)
+
+DROP VIEW test_stj_sw0;
+DROP FOREIGN TABLE test_stj_sw0_s CASCADE;
+DROP TABLE test_stj_sw0_t;
+CREATE TABLE test_stj_t4 (x integer, y integer, z integer);
+CREATE FUNCTION test_stj_foo(integer) RETURNS integer AS $$
+BEGIN
+  RETURN 0;
+END
+$$
+LANGUAGE plpgsql;
+CREATE FOREIGN TABLE stj_deps_stream (x int) SERVER pipelinedb;
+CREATE VIEW stj_deps AS SELECT test_stj_foo(s.x::integer), t.x FROM stj_deps_stream s JOIN test_stj_t4 t ON s.x = t.x;
+NOTICE:  consider creating an index on t.x for improved stream-table join performance
+-- Table columns being joined on can't be dropped, but unused columns can be
+ALTER TABLE test_stj_t4 DROP COLUMN y;
+-- Functions used by CVs can't be dropped
+DROP FUNCTION test_stj_foo(integer);
+ERROR:  cannot drop function test_stj_foo(integer) because other objects depend on it
+DETAIL:  view stj_deps depends on function test_stj_foo(integer)
+HINT:  Use DROP ... CASCADE to drop the dependent objects too.
+DROP VIEW stj_deps;
+-- Now we can drop everything
+ALTER TABLE test_stj_t4 DROP COLUMN x;
+DROP TABLE test_stj_t4;
+DROP FUNCTION test_stj_foo(integer);
+DROP FOREIGN TABLE stj_deps_stream CASCADE;
+-- Stream-view joins
+CREATE FOREIGN TABLE test_svj_stream (tid int) SERVER pipelinedb;
+CREATE VIEW test_stj_v0 AS SELECT * from test_stj_t0;
+CREATE VIEW svj AS SELECT COUNT(*) FROM test_svj_stream s JOIN test_stj_v0 v ON s.tid::integer = v.tid;
+NOTICE:  consider creating an index on v.tid for improved stream-table join performance
+INSERT INTO test_svj_stream (tid) SELECT 0 FROM generate_series(1, 1000);
+INSERT INTO test_svj_stream (tid) SELECT 1 FROM generate_series(1, 1000);
+SELECT pg_sleep(0.1);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+SELECT * FROM svj;
+ count 
+-------
+  7000
+(1 row)
+
+DROP VIEW svj;
+DROP VIEW test_stj_v0;
+DROP FOREIGN TABLE test_svj_stream CASCADE;
+DROP TABLE test_stj_t0;
+DROP TABLE test_stj_t1;
+DROP TABLE test_stj_t2;
+DROP TABLE test_stj_t3;
+DROP TABLE test_stj_location;
+DROP TABLE test_stj_blocks;
+DROP TABLE test_stj_empty CASCADE;
+NOTICE:  drop cascades to view test_stj_empty_join
+-- Join types
+CREATE TABLE test_stj_t (x int);
+INSERT INTO test_stj_t (x) SELECT generate_series(0, 1000) AS x;
+CREATE FOREIGN TABLE test_stj_stream (x int) SERVER pipelinedb;
+CREATE VIEW test_stj_inner AS SELECT s.x, count(*) FROM test_stj_stream AS s JOIN test_stj_t AS t ON (s.x = t.x) GROUP BY s.x;
+NOTICE:  consider creating an index on t.x for improved stream-table join performance
+CREATE VIEW test_stj_left AS SELECT s.x, count(*) FROM test_stj_stream AS s LEFT JOIN test_stj_t AS t ON (s.x = t.x) GROUP BY s.x;
+NOTICE:  consider creating an index on t.x for improved stream-table join performance
+CREATE VIEW test_stj_right AS SELECT s.x, count(*) FROM test_stj_t AS t RIGHT JOIN test_stj_stream AS s ON (s.x = t.x) GROUP BY s.x;
+NOTICE:  consider creating an index on t.x for improved stream-table join performance
+CREATE VIEW test_stj_anti AS SELECT s.x, count(*) FROM test_stj_stream AS s LEFT JOIN test_stj_t AS t ON (s.x = t.x) WHERE t.x IS NULL GROUP BY s.x;
+NOTICE:  consider creating an index on t.x for improved stream-table join performance
+CREATE VIEW test_stj_semi AS SELECT s.x, count(*) FROM test_stj_stream AS s WHERE EXISTS (SELECT 1 FROM test_stj_t AS t WHERE t.x = s.x) GROUP BY s.x;
+CREATE VIEW test_stj_cross AS SELECT s.x, count(*) FROM test_stj_stream AS s, test_stj_t AS t GROUP BY s.x;
+INSERT INTO test_stj_stream (x) SELECT generate_series(0, 5) AS x;
+INSERT INTO test_stj_stream (x) SELECT generate_series(2000, 2005) AS x;
+SELECT * FROM test_stj_inner ORDER BY x;
+ x | count 
+---+-------
+ 0 |     1
+ 1 |     1
+ 2 |     1
+ 3 |     1
+ 4 |     1
+ 5 |     1
+(6 rows)
+
+SELECT * FROM test_stj_left ORDER BY x;
+  x   | count 
+------+-------
+    0 |     1
+    1 |     1
+    2 |     1
+    3 |     1
+    4 |     1
+    5 |     1
+ 2000 |     1
+ 2001 |     1
+ 2002 |     1
+ 2003 |     1
+ 2004 |     1
+ 2005 |     1
+(12 rows)
+
+SELECT * FROM test_stj_right ORDER BY x;
+  x   | count 
+------+-------
+    0 |     1
+    1 |     1
+    2 |     1
+    3 |     1
+    4 |     1
+    5 |     1
+ 2000 |     1
+ 2001 |     1
+ 2002 |     1
+ 2003 |     1
+ 2004 |     1
+ 2005 |     1
+(12 rows)
+
+SELECT * FROM test_stj_anti ORDER BY x;
+  x   | count 
+------+-------
+ 2000 |     1
+ 2001 |     1
+ 2002 |     1
+ 2003 |     1
+ 2004 |     1
+ 2005 |     1
+(6 rows)
+
+SELECT * FROM test_stj_semi ORDER BY x;
+ x | count 
+---+-------
+ 0 |     1
+ 1 |     1
+ 2 |     1
+ 3 |     1
+ 4 |     1
+ 5 |     1
+(6 rows)
+
+SELECT * FROM test_stj_cross ORDER BY x;
+  x   | count 
+------+-------
+    0 |  1001
+    1 |  1001
+    2 |  1001
+    3 |  1001
+    4 |  1001
+    5 |  1001
+ 2000 |  1001
+ 2001 |  1001
+ 2002 |  1001
+ 2003 |  1001
+ 2004 |  1001
+ 2005 |  1001
+(12 rows)
+
+SELECT pipelinedb.truncate_continuous_view('test_stj_inner');
+ truncate_continuous_view 
+--------------------------
+ 
+(1 row)
+
+SELECT pipelinedb.truncate_continuous_view('test_stj_left');
+ truncate_continuous_view 
+--------------------------
+ 
+(1 row)
+
+SELECT pipelinedb.truncate_continuous_view('test_stj_right');
+ truncate_continuous_view 
+--------------------------
+ 
+(1 row)
+
+SELECT pipelinedb.truncate_continuous_view('test_stj_anti');
+ truncate_continuous_view 
+--------------------------
+ 
+(1 row)
+
+SELECT pipelinedb.truncate_continuous_view('test_stj_semi');
+ truncate_continuous_view 
+--------------------------
+ 
+(1 row)
+
+SELECT pipelinedb.truncate_continuous_view('test_stj_cross');
+ truncate_continuous_view 
+--------------------------
+ 
+(1 row)
+
+CREATE INDEX test_stj_t_idx ON test_stj_t (x);
+ANALYZE test_stj_t;
+INSERT INTO test_stj_stream (x) SELECT generate_series(0, 5) AS x;
+INSERT INTO test_stj_stream (x) SELECT generate_series(2000, 2005) AS x;
+SELECT * FROM test_stj_inner ORDER BY x;
+ x | count 
+---+-------
+ 0 |     1
+ 1 |     1
+ 2 |     1
+ 3 |     1
+ 4 |     1
+ 5 |     1
+(6 rows)
+
+SELECT * FROM test_stj_left ORDER BY x;
+  x   | count 
+------+-------
+    0 |     1
+    1 |     1
+    2 |     1
+    3 |     1
+    4 |     1
+    5 |     1
+ 2000 |     1
+ 2001 |     1
+ 2002 |     1
+ 2003 |     1
+ 2004 |     1
+ 2005 |     1
+(12 rows)
+
+SELECT * FROM test_stj_right ORDER BY x;
+  x   | count 
+------+-------
+    0 |     1
+    1 |     1
+    2 |     1
+    3 |     1
+    4 |     1
+    5 |     1
+ 2000 |     1
+ 2001 |     1
+ 2002 |     1
+ 2003 |     1
+ 2004 |     1
+ 2005 |     1
+(12 rows)
+
+SELECT * FROM test_stj_anti ORDER BY x;
+  x   | count 
+------+-------
+ 2000 |     1
+ 2001 |     1
+ 2002 |     1
+ 2003 |     1
+ 2004 |     1
+ 2005 |     1
+(6 rows)
+
+SELECT * FROM test_stj_semi ORDER BY x;
+ x | count 
+---+-------
+ 0 |     1
+ 1 |     1
+ 2 |     1
+ 3 |     1
+ 4 |     1
+ 5 |     1
+(6 rows)
+
+SELECT * FROM test_stj_cross ORDER BY x;
+  x   | count 
+------+-------
+    0 |  1001
+    1 |  1001
+    2 |  1001
+    3 |  1001
+    4 |  1001
+    5 |  1001
+ 2000 |  1001
+ 2001 |  1001
+ 2002 |  1001
+ 2003 |  1001
+ 2004 |  1001
+ 2005 |  1001
+(12 rows)
+
+DROP FOREIGN TABLE test_stj_stream CASCADE;
+NOTICE:  drop cascades to 6 other objects
+DETAIL:  drop cascades to view test_stj_inner
+drop cascades to view test_stj_left
+drop cascades to view test_stj_right
+drop cascades to view test_stj_anti
+drop cascades to view test_stj_semi
+drop cascades to view test_stj_cross
+DROP TABLE test_stj_t;
+CREATE TABLE partitioned_t (
+  key integer,
+  value text
+) PARTITION BY LIST (key);
+CREATE TABLE partitioned_t_0 PARTITION OF partitioned_t
+ FOR VALUES IN (0);
+CREATE TABLE partitioned_t_1 PARTITION OF partitioned_t
+ FOR VALUES IN (1);
+CREATE TABLE partitioned_t_2 PARTITION OF partitioned_t
+ FOR VALUES IN (2);
+CREATE TABLE partitioned_t_3 PARTITION OF partitioned_t
+ FOR VALUES IN (3);
+CREATE TABLE partitioned_t_4 PARTITION OF partitioned_t
+ FOR VALUES IN (4);
+CREATE TABLE partitioned_t_5 PARTITION OF partitioned_t
+ FOR VALUES IN (5);
+CREATE TABLE partitioned_t_6 PARTITION OF partitioned_t
+ FOR VALUES IN (6);
+CREATE TABLE partitioned_t_7 PARTITION OF partitioned_t
+ FOR VALUES IN (7);
+CREATE TABLE partitioned_t_8 PARTITION OF partitioned_t
+ FOR VALUES IN (8);
+CREATE TABLE partitioned_t_9 PARTITION OF partitioned_t
+ FOR VALUES IN (9);
+INSERT INTO partitioned_t SELECT x, 'key' || x AS key FROM generate_series(0, 9) x;
+CREATE FOREIGN TABLE partitioned_s (
+  key integer
+) SERVER pipelinedb;
+CREATE VIEW partitioned_stj WITH (action=materialize) AS
+ SELECT t.key, t.value, count(*) FROM partitioned_t t
+  JOIN partitioned_s s ON t.key = s.key
+ GROUP BY t.key, t.value;
+NOTICE:  consider creating an index on t.key for improved stream-table join performance
+INSERT INTO partitioned_s SELECT x FROM generate_series(0, 9) x;
+SELECT * FROM partitioned_stj ORDER BY key, value;
+ key | value | count 
+-----+-------+-------
+   0 | key0  |     1
+   1 | key1  |     1
+   2 | key2  |     1
+   3 | key3  |     1
+   4 | key4  |     1
+   5 | key5  |     1
+   6 | key6  |     1
+   7 | key7  |     1
+   8 | key8  |     1
+   9 | key9  |     1
+(10 rows)
+
+INSERT INTO partitioned_s SELECT x FROM generate_series(0, 5) x;
+SELECT * FROM partitioned_stj ORDER BY key, value;
+ key | value | count 
+-----+-------+-------
+   0 | key0  |     2
+   1 | key1  |     2
+   2 | key2  |     2
+   3 | key3  |     2
+   4 | key4  |     2
+   5 | key5  |     2
+   6 | key6  |     1
+   7 | key7  |     1
+   8 | key8  |     1
+   9 | key9  |     1
+(10 rows)
+
+INSERT INTO partitioned_s SELECT x FROM generate_series(0, 3) x;
+SELECT * FROM partitioned_stj ORDER BY key, value;
+ key | value | count 
+-----+-------+-------
+   0 | key0  |     3
+   1 | key1  |     3
+   2 | key2  |     3
+   3 | key3  |     3
+   4 | key4  |     2
+   5 | key5  |     2
+   6 | key6  |     1
+   7 | key7  |     1
+   8 | key8  |     1
+   9 | key9  |     1
+(10 rows)
+
+DROP FOREIGN TABLE partitioned_s CASCADE;
+NOTICE:  drop cascades to view partitioned_stj
+DROP TABLE partitioned_t;
