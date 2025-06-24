@@ -1,0 +1,93 @@
+CREATE FOREIGN TABLE test_ns_stream (x int) SERVER pipelinedb;
+CREATE VIEW test_cvn0 AS SELECT COUNT(*) FROM test_ns_stream;
+CREATE VIEW nonexistent.cv AS SELECT COUNT(*) FROM test_ns_stream;
+ERROR:  schema "nonexistent" does not exist
+CREATE SCHEMA test_cvn_schema0;
+CREATE FOREIGN TABLE test_cvn_schema0.test_ns_stream (x int) SERVER pipelinedb;
+CREATE VIEW test_cvn_schema0.test_cvn0 AS SELECT COUNT(*) FROM test_cvn_schema0.test_ns_stream;
+CREATE SCHEMA test_cvn_schema1;
+CREATE FOREIGN TABLE test_cvn_schema1.test_ns_stream (x int) SERVER pipelinedb;
+CREATE VIEW test_cvn_schema1.test_cvn0 AS SELECT COUNT(*) FROM test_cvn_schema1.test_ns_stream;
+SELECT schema, name FROM pipelinedb.get_views() WHERE name LIKE '%test_cvn%' ORDER BY schema, name;
+      schema      |   name    
+------------------+-----------
+ public           | test_cvn0
+ test_cvn_schema0 | test_cvn0
+ test_cvn_schema1 | test_cvn0
+(3 rows)
+
+ALTER SCHEMA test_cvn_schema0 RENAME TO test_cvn_schema0_new;
+CREATE VIEW test_cvn_schema0_new.test_cvn0 AS SELECT COUNT(*) FROM test_cvn_schema0_new.test_ns_stream;
+ERROR:  relation "test_cvn0" already exists
+CREATE VIEW test_cvn_schema0_new.test_cvn1 AS SELECT COUNT(*) FROM test_cvn_schema0_new.test_ns_stream;
+SELECT schema, name FROM pipelinedb.get_views() WHERE name LIKE '%test_cvn%' ORDER BY schema, name;
+        schema        |   name    
+----------------------+-----------
+ public               | test_cvn0
+ test_cvn_schema0_new | test_cvn0
+ test_cvn_schema0_new | test_cvn1
+ test_cvn_schema1     | test_cvn0
+(4 rows)
+
+DROP SCHEMA test_cvn_schema0_new;
+ERROR:  cannot drop schema test_cvn_schema0_new because other objects depend on it
+DETAIL:  foreign table test_cvn_schema0_new.test_ns_stream depends on schema test_cvn_schema0_new
+view test_cvn_schema0_new.test_cvn0 depends on schema test_cvn_schema0_new
+view test_cvn_schema0_new.test_cvn1 depends on schema test_cvn_schema0_new
+HINT:  Use DROP ... CASCADE to drop the dependent objects too.
+DROP SCHEMA test_cvn_schema0_new CASCADE;
+NOTICE:  drop cascades to 3 other objects
+DETAIL:  drop cascades to foreign table test_cvn_schema0_new.test_ns_stream
+drop cascades to view test_cvn_schema0_new.test_cvn0
+drop cascades to view test_cvn_schema0_new.test_cvn1
+SELECT schema, name FROM pipelinedb.get_views() WHERE name LIKE '%test_cvn%' ORDER BY schema, name;
+      schema      |   name    
+------------------+-----------
+ public           | test_cvn0
+ test_cvn_schema1 | test_cvn0
+(2 rows)
+
+DROP VIEW test_cvn0;
+DROP SCHEMA test_cvn_schema1 CASCADE;
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  drop cascades to foreign table test_cvn_schema1.test_ns_stream
+drop cascades to view test_cvn_schema1.test_cvn0
+SELECT schema, name FROM pipelinedb.get_views() WHERE name LIKE '%test_cvn%' ORDER BY schema, name;
+ schema | name 
+--------+------
+(0 rows)
+
+CREATE FOREIGN TABLE test_cvn_stream (x int) SERVER pipelinedb;
+CREATE VIEW test_cvn0 AS SELECT x::int FROM test_cvn_stream;
+CREATE SCHEMA test_cvn_schema0;
+CREATE FOREIGN TABLE test_cvn_schema0.test_cvn_stream (x int, y text) SERVER pipelinedb;
+CREATE VIEW test_cvn_schema0.test_cvn0 AS SELECT x::int, y::text FROM test_cvn_schema0.test_cvn_stream;
+SELECT schema, name FROM pipelinedb.get_streams() WHERE name='test_cvn_stream' ORDER BY schema;
+      schema      |      name       
+------------------+-----------------
+ public           | test_cvn_stream
+ test_cvn_schema0 | test_cvn_stream
+(2 rows)
+
+INSERT INTO test_cvn_stream (x) VALUES (1);
+INSERT INTO test_cvn_schema0.test_cvn_stream (x, y) VALUES (2, 2), (3, 3);
+SELECT * FROM test_cvn0;
+ x 
+---
+ 1
+(1 row)
+
+SELECT * FROM test_cvn_schema0.test_cvn0 ORDER BY x;
+ x | y 
+---+---
+ 2 | 2
+ 3 | 3
+(2 rows)
+
+DROP FOREIGN TABLE test_ns_stream CASCADE;
+DROP FOREIGN TABLE test_cvn_stream CASCADE;
+NOTICE:  drop cascades to view test_cvn0
+DROP SCHEMA test_cvn_schema0 CASCADE;
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  drop cascades to foreign table test_cvn_schema0.test_cvn_stream
+drop cascades to view test_cvn_schema0.test_cvn0
