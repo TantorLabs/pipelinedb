@@ -1086,7 +1086,9 @@ combinable_string_agg_combine(PG_FUNCTION_ARGS)
 	if (state == NULL)
 	{
 		state = makeStringAggState(fcinfo);
-		state->dlen = incoming->dlen;
+
+		if (incoming != NULL)
+			state->dlen = incoming->dlen;
 	}
 
 	if (incoming != NULL)

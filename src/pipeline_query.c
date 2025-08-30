@@ -1935,7 +1935,7 @@ ExecCreateContViewStmt(RangeVar *view, Node *sel, List *options, const char *que
 	else
 	{
 		/* Add primary key column */
-		pk_coldef = make_coldef(CQ_MATREL_PKEY, INT8OID, InvalidOid);
+		pk_coldef = make_coldef(CQ_MATREL_PKEY, INT8OID, -1);
 		tableElts = lappend(tableElts, pk_coldef);
 	}
 

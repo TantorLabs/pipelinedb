@@ -54,12 +54,39 @@ typedef struct StreamTargetsEntry
 	Bitmapset *queries;
 } StreamTargetsEntry;
 
+static void
+validate_constraint(Constraint *con, char *relname)
+{
+	if (con->contype != CONSTR_NOTNULL && con->contype != CONSTR_DEFAULT)
+	{
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("cannot create constraint on stream \"%s\"", relname),
+				 errhint("Only NOT NULL constraints are currently unsupported "
+						 "on streams.")));
+	}
+}
+
+static void
+validate_column_constraints(List *constraints, char *relname)
+{
+	ListCell *lc;
+
+	foreach(lc, constraints)
+	{
+		Node *n = (Node *) lfirst(lc);
+
+		if (!IsA(n, Constraint))
+			continue;
+
+		validate_constraint((Constraint *) n, relname);
+	}
+}
+
 /*
  * validate_stream_constraints
  *
- * We allow some stuff that is technically supported by the grammar
- * for CREATE STREAM, so we do some validation here so that we can generate more
- * informative errors than simply syntax errors.
+ * Validate that CREATE FOREIGN TABLE contains only supported constraints.
  */
 static void
 validate_stream_constraints(CreateStmt *stmt)
@@ -71,17 +98,18 @@ validate_stream_constraints(CreateStmt *stmt)
 		Node *n = (Node *) lfirst(lc);
 		ColumnDef *cdef;
 
+		if (IsA(n, Constraint))
+		{
+			validate_constraint((Constraint *) n, stmt->relation->relname);
+			continue;
+		}
+
 		if (!IsA(n, ColumnDef))
 			continue;
 
 		cdef = (ColumnDef *) n;
 		if (cdef->constraints)
-		{
-				ereport(ERROR,
-						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-						 errmsg("cannot create constraint on stream %s", stmt->relation->relname),
-						 errhint("Constraints are currently unsupported on streams.")));
-		}
+			validate_column_constraints(cdef->constraints, stmt->relation->relname);
 	}
 }
 

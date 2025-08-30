@@ -23,6 +23,7 @@
 #include "copy.h"
 #include "executor.h"
 #include "miscadmin.h"
+#include "nodes/parsenodes.h"
 #include "pipeline_query.h"
 #include "pipeline_stream.h"
 #include "scheduler.h"
@@ -372,11 +373,15 @@ PipelineProcessUtility(PlannedStmt *pstmt, const char *sql, bool readOnlyTree,
 				foreach(lc, stmt->cmds)
 				{
 					AlterTableCmd *cmd = (AlterTableCmd *) lfirst(lc);
-					if (cmd->subtype != AT_AddColumn && cmd->subtype != AT_ChangeOwner)
+					if (cmd->subtype != AT_AddColumn &&
+						cmd->subtype != AT_ChangeOwner &&
+						cmd->subtype != AT_ColumnDefault)
 					{
 						ereport(ERROR,
 								(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-										(errmsg("streams only support ADD COLUMN or OWNER TO actions"))));
+								 errmsg("streams only support ADD COLUMN, "
+										"OWNER TO, SET DEFAULT or "
+										"DROP DEFAULT actions")));
 					}
 				}
 			}

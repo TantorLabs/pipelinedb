@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2025-08-29
+
+### Added
+
+- It is now possible to specify `NOT NULL` constraints on stream columns. Rows
+  violating `NOT NULL` constraints are now rejected with appropriate error
+  messages (GL-52).
+- It is now possible to specify `DEFAULT` values in stream definitions. Default
+  expressions are now evaluated during row ingestion (GL-52).
+- Added support for `ALTER FOREIGN TABLE ... ALTER COLUMN ... SET DEFAULT` and
+  `ALTER FOREIGN TABLE ... ALTER COLUMN ... DROP DEFAULT` commands for streams
+  (GL-52).
+
+### Fixed
+
+- Dumps created with `pg_dump` for streams containing `SERIAL` columns can now
+  be restored successfully (GL-52).
+- Automatically created primary key columns on CV materialized relations had an
+  incorrect type modifier. That created problems when attaching manually created
+  tables or tables restored from a dump as new partitions to partitioned
+  materialized relations (GL-46).
+- Potential integer overflow could lead to errors in the Top-K function
+  processing (TTDB-848).
+- Potential null pointer dereference could lead to errors in continuous queries
+  involving the `string_agg()` function (TTDB-851).
+
 ## [1.3.5] - 2025-06-18
 
 ### Added

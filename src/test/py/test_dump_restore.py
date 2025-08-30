@@ -663,3 +663,49 @@ def test_index_fillfactor(pipeline, clean_db):
   ORDER BY c.relname""")[1]
 
   assert result['reloptions'] == ['fillfactor=33']
+
+def test_serial(pipeline, clean_db):
+  """
+  Verify that we can dump and restore CVs with the SERIAL data type
+  """
+
+  pipeline.create_stream('stream0', id='serial', x='int')
+  q = """
+  SELECT id::integer % 100 AS g, count(x) counts, sum(x) sums
+  FROM stream0
+  GROUP BY g
+  """
+  pipeline.create_cv('test_serial', q)
+
+  rows = [(x,) for x in range(1, 1001)]
+  pipeline.insert('stream0', ('x',), rows)
+
+  def _verify():
+    result = pipeline.execute('SELECT count(*) FROM test_serial')[0]
+    assert result['count'] == 100
+
+    result = pipeline.execute('SELECT sum(counts) FROM test_serial')[0]
+    assert result['sum'] == 1000
+
+    result = pipeline.execute('SELECT sum(sums) FROM test_serial')[0]
+    assert result['sum'] == 500500
+
+  _verify()
+  _dump(pipeline, 'test_serial.sql')
+
+  pipeline.drop_all()
+  _restore(pipeline, 'test_serial.sql')
+  _verify()
+
+  # Now verify that we can successfully add more data to the restored CV
+  rows = [(x,) for x in range(1, 2001)]
+  pipeline.insert('stream0', ('x',), rows)
+
+  result = pipeline.execute('SELECT count(*) FROM test_serial')[0]
+  assert result['count'] == 100
+
+  result = pipeline.execute('SELECT sum(counts) FROM test_serial')[0]
+  assert result['sum'] == 3000
+
+  result = pipeline.execute('SELECT sum(sums) FROM test_serial')[0]
+  assert result['sum'] == 2501500
