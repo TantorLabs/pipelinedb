@@ -183,7 +183,7 @@ create_hashed_topk_agg_state(MemoryContext context, int k, TypeCacheEntry *typ)
 	old = MemoryContextSwitchTo(context);
 
 	result = palloc0(sizeof(HashedTopKState));
-	result->monitored = hash_create("HashedTopK", k * 4, &ctl, HASH_ELEM | HASH_BLOBS | HASH_CONTEXT);
+	result->monitored = hash_create("HashedTopK", (long) k * 4, &ctl, HASH_ELEM | HASH_BLOBS | HASH_CONTEXT);
 	result->fss = FSSCreate(k, typ);
 	MemoryContextSwitchTo(old);
 
