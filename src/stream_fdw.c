@@ -544,6 +544,10 @@ ExecStreamInsert(EState *estate, ResultRelInfo *result_info,
 	StreamInsertState *sis = (StreamInsertState *) result_info->ri_FdwState;
 	HeapTuple tup = ExecFetchSlotHeapTuple(slot, true, &should_free);
 
+	/* Check NOT NULL constraints */
+	if (result_info->ri_RelationDesc->rd_att->constr)
+		ExecConstraints(result_info, slot, estate);
+
 	if (bms_is_empty(sis->queries))
 		return slot;
 

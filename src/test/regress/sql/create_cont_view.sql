@@ -239,3 +239,58 @@ CREATE VIEW cor0 AS SELECT count(*) FROM cor_s;
 CREATE OR REPLACE VIEW cor0 AS SELECT count(*) FROM cor_s;
 
 DROP FOREIGN TABLE cor_s CASCADE;
+
+-- Verify that correct type modifier is specified for automatically created PKs
+
+CREATE FOREIGN TABLE s (x int) SERVER pipelinedb;
+
+CREATE VIEW cv_implicit_pk AS SELECT x FROM s;
+
+SELECT attname, atttypmod
+FROM pg_attribute
+WHERE attrelid = 'cv_implicit_pk_mrel'::regclass AND attnum > 0;
+
+CREATE VIEW cv_explicit_pk WITH (pk='x') AS SELECT x FROM s;
+
+SELECT attname, atttypmod
+FROM pg_attribute
+WHERE attrelid = 'cv_explicit_pk_mrel'::regclass AND attnum > 0;
+
+CREATE VIEW cv_part WITH (partition_by='ts', partition_duration='1 second')
+       AS SELECT arrival_timestamp AS ts FROM s;
+
+SELECT attname, atttypmod
+FROM pg_attribute
+WHERE attrelid = 'cv_part_mrel'::regclass AND attnum > 0;
+
+INSERT INTO s VALUES (1);
+
+DO $$
+DECLARE
+    parent_oid OID;
+    part_name TEXT;
+    query TEXT;
+    r RECORD;
+BEGIN
+    -- Get OID of the specified table
+    SELECT c.oid INTO parent_oid
+    FROM pg_class c
+    JOIN pg_namespace n ON c.relnamespace = n.oid
+    WHERE c.relname = 'cv_part_mrel';
+
+    -- Find first table matching 'mrel_<oid>_%' pattern
+    SELECT c.relname INTO part_name
+    FROM pg_class c
+    WHERE c.relname LIKE 'mrel_' || parent_oid || '_%'
+    LIMIT 1;
+
+    query := 'SELECT attname, atttypmod ' ||
+          'FROM pg_attribute ' ||
+          'WHERE attrelid = ''' || part_name || '''::regclass AND attnum > 0';
+
+    FOR r IN EXECUTE query LOOP
+        RAISE NOTICE '%', r;
+    END LOOP;
+END $$;
+
+DROP FOREIGN TABLE s CASCADE;
