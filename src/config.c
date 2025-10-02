@@ -246,7 +246,7 @@ create_ipc_directory(void)
 	StringInfoData buf;
 
 	initStringInfo(&buf);
-	appendStringInfo(&buf, "%s/pipeline/zmq", DataDir);
+	appendStringInfo(&buf, "%s/pipeline/zmq", socket_dir);
 
 	if (mkdir_p(buf.data, S_IRWXU) != 0 && errno != EEXIST)
 		elog(PANIC, "failed to check existence of IPC directory");
@@ -467,6 +467,14 @@ _PG_init(void)
 		   false,
 		   PGC_USERSET, 0,
 		   NULL, NULL, NULL);
+
+	DefineCustomStringVariable("pipelinedb.ipc_socket_directory",
+			gettext_noop("Sets the directory where IPC Unix-domain sockets will be created."),
+			NULL,
+			&socket_dir,
+			DEFAULT_PGSOCKET_DIR,
+			PGC_POSTMASTER, 0,
+			NULL, NULL, NULL);
 
 	splash();
 
