@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2025-09-16
+
+### Added
+
+- New configuration parameter `pipelinedb.ipc_socket_directory` to specify a
+  custom directory for IPC Unix-domain sockets. This addresses incompatibility
+  issues with backup utilities that would throw errors when attempting to copy
+  socket files created in the data directory. By default, IPC sockets are now
+  created in `/tmp` instead of the data directory (GL-53).
+
 ## [1.4.0] - 2025-08-29
 
 ### Added
