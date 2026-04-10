@@ -3639,10 +3639,12 @@ AnalyzeCreateViewForTransform(ViewStmt *stmt)
  * finalize_aggs_mutator
  */
 static Node *
-finalize_aggs_mutator(Node *node, Query *worker_query)
+finalize_aggs_mutator(Node *node, void *context)
 {
+	Query	   *worker_query = (Query *) context;
+
 	if (node == NULL)
-		return false;
+		return NULL;
 
 	if (IsA(node, ColumnRef))
 	{
