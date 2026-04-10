@@ -1,0 +1,3 @@
+include:
+  - project: $CICD_PROJECT
+    file:    $CICD_SCRIPT

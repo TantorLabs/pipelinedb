@@ -1,6 +1,7 @@
 import getpass
 import os
 import psycopg2
+import psycopg2.errors
 import pytest
 import re
 import shutil
@@ -145,21 +146,15 @@ class PipelineDB(object):
     else:
       raise Exception('Failed to connect to PipelineDB')
 
-    # Wait for bgworkers to start
+    # Wait for bgworkers to start via pg_stat_activity (reliable across
+    # containers and PG versions, unlike the old ps-aux-grep approach).
+    expected_workers = (default_params['pipelinedb.num_workers'] +
+        default_params['pipelinedb.num_combiners'])
     for i in range(30):
-      try:
-        out = subprocess.check_output(r'ps aux | grep "\[postgres\]" | grep -e "worker[0-9]" -e "combiner[0-9]"',
-                shell=True).splitlines()
-      except subprocess.CalledProcessError:
-        out = []
-      # Pick out PIDs that are greater than the PID of the postmaster we fired above.
-      # This way any running PipelineDB instances are ignored.
-      out = filter(lambda s: s.strip(), out)
-      out = map(lambda s: int(s.split()[1]), out)
-      out = filter(lambda p: p > self.proc.pid, out)
-      l = list(out)
-      if len(l) == (default_params['pipelinedb.num_workers'] +
-          default_params['pipelinedb.num_combiners']):
+      result = self.execute(
+        "SELECT count(*) FROM pg_stat_activity "
+        "WHERE backend_type LIKE 'worker%' OR backend_type LIKE 'combiner%'")
+      if result[0][0] >= expected_workers:
         break
       time.sleep(1)
     else:
@@ -204,14 +199,30 @@ class PipelineDB(object):
   def drop_all(self):
     """
     Drop all continuous queries and streams
+
+    Background workers can hold catalog locks that conflict with DROP
+    (AccessExclusiveLock). Flush synchronizes with workers; we retry on
+    deadlock so teardown does not leave objects behind for the next test.
     """
-    for transform in self.execute('SELECT schema, name FROM pipelinedb.get_transforms()'):
-      self.execute('DROP VIEW %s.%s CASCADE' % (transform[0], transform[1]))
-    for view in self.execute('SELECT schema, name FROM pipelinedb.get_views()'):
-      self.execute('DROP VIEW %s.%s CASCADE' % (view[0], view[1]))
-    for stream in self.execute('SELECT schema, name FROM pipelinedb.get_streams()'):
-      self.execute('DROP FOREIGN TABLE %s.%s CASCADE' % (stream[0], stream[1]))
-    self.execute('DROP TABLE IF EXISTS tmprel')
+    max_attempts = 20
+    for attempt in range(max_attempts):
+      try:
+        self.execute('SELECT pipelinedb.flush()')
+        for transform in self.execute(
+            'SELECT schema, name FROM pipelinedb.get_transforms()'):
+          self.execute('DROP VIEW %s.%s CASCADE' % (transform[0], transform[1]))
+        for view in self.execute('SELECT schema, name FROM pipelinedb.get_views()'):
+          self.execute('DROP VIEW %s.%s CASCADE' % (view[0], view[1]))
+        for stream in self.execute('SELECT schema, name FROM pipelinedb.get_streams()'):
+          self.execute('DROP FOREIGN TABLE %s.%s CASCADE' % (stream[0], stream[1]))
+        self.execute('DROP TABLE IF EXISTS tmprel')
+        return
+      except psycopg2.errors.DeadlockDetected:
+        if self.conn:
+          self.conn.rollback()
+        if attempt + 1 == max_attempts:
+          raise
+        time.sleep(min(0.05 * (2 ** attempt), 1.0))
 
   def create_cv(self, name, stmt, **kw):
     """

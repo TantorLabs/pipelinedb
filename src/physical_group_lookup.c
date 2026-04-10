@@ -359,13 +359,26 @@ lnext:
 }
 
 /*
+ * ResetPhysicalGroupLookup
+ *
+ * Clear module-level state so that a subsequent SetPhysicalGroupLookupOutput
+ * call won't hit Assert(lookup_result == NULL).  Must be called on any error
+ * path that skips EndCustomScan (e.g. combiner PG_CATCH after PortalRun).
+ */
+void
+ResetPhysicalGroupLookup(void)
+{
+	lookup_result = NULL;
+	partitions = NIL;
+}
+
+/*
  * end_lookup_scan
  */
 static void
 end_lookup_scan(struct CustomScanState *node)
 {
-	lookup_result = NULL;
-	partitions = NIL;
+	ResetPhysicalGroupLookup();
 	ExecEndNode(outerPlanState(node));
 }
 

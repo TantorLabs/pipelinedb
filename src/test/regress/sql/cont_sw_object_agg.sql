@@ -56,7 +56,7 @@ CREATE VIEW test_sw_json_agg AS SELECT key::text, json_agg(tval::text) AS j0, js
 INSERT INTO cqswobjectagg_stream (key, tval, fval, ival) VALUES ('x', 'text', 0.01, 41), ('x', 'more text', 0.02, 42), ('x', 'blaahhhh', 0.03, 43);
 INSERT INTO cqswobjectagg_stream (key, tval, fval, ival) VALUES ('y', '4.2', 1.01, 42), ('z', '\"quoted\"', 2.01, 42), ('x', '', 0.04, 44), ('z', '2', '3', '4');
 
-SELECT key, array_sort(json_to_array(j0) COLLATE "en_US.utf8") FROM test_sw_json_agg ORDER BY key;
+SELECT key, array_sort(json_to_array(j0) COLLATE "C.utf8") FROM test_sw_json_agg ORDER BY key;
 SELECT key, array_sort(json_to_array(j1)) FROM test_sw_json_agg ORDER BY key;
 SELECT key, array_sort(json_to_array(j2)) FROM test_sw_json_agg ORDER BY key;
 
@@ -64,7 +64,7 @@ SELECT pg_sleep(1);
 
 INSERT INTO cqswobjectagg_stream (key, tval, fval, ival) VALUES ('x', 'text', 0.05, 45), ('y', 'more text', 0.02, 43), ('z', 'blaahhhh', 0.03, 44);
 
-SELECT key, array_sort(json_to_array(j0) COLLATE "en_US.utf8") FROM test_sw_json_agg ORDER BY key;
+SELECT key, array_sort(json_to_array(j0) COLLATE "C.utf8") FROM test_sw_json_agg ORDER BY key;
 SELECT key, array_sort(json_to_array(j1)) FROM test_sw_json_agg ORDER BY key;
 SELECT key, array_sort(json_to_array(j2)) FROM test_sw_json_agg ORDER BY key;
 

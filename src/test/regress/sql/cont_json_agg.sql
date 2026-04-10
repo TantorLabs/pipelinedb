@@ -56,13 +56,13 @@ CREATE VIEW test_json_agg AS SELECT key::text, json_agg(tval::text) AS j0, json_
 INSERT INTO cqobjectagg_stream (key, tval, fval, ival) VALUES ('x', 'text', 0.01, 42), ('x', 'more text', 0.01, 42), ('x', 'blaahhhh', 0.01, 42);
 INSERT INTO cqobjectagg_stream (key, tval, fval, ival) VALUES ('y', '4.2', 1.01, 42), ('z', '\"quoted\"', 2.01, 42), ('x', '', 0.01, 42), ('z', '2', '3', '4');
 
-SELECT key, array_sort(json_to_array(j0) COLLATE "en_US.utf8") FROM test_json_agg ORDER BY key;
+SELECT key, array_sort(json_to_array(j0) COLLATE "C.utf8") FROM test_json_agg ORDER BY key;
 SELECT key, array_sort(json_to_array(j1)) FROM test_json_agg ORDER BY key;
 SELECT key, array_sort(json_to_array(j2)) FROM test_json_agg ORDER BY key;
 
 INSERT INTO cqobjectagg_stream (key, tval, fval, ival) VALUES ('x', 'text', 0.01, 42), ('y', 'more text', 0.01, 42), ('z', 'blaahhhh', 0.01, 42);
 
-SELECT key, array_sort(json_to_array(j0) COLLATE "en_US.utf8") FROM test_json_agg ORDER BY key;
+SELECT key, array_sort(json_to_array(j0) COLLATE "C.utf8") FROM test_json_agg ORDER BY key;
 SELECT key, array_sort(json_to_array(j1)) FROM test_json_agg ORDER BY key;
 SELECT key, array_sort(json_to_array(j2)) FROM test_json_agg ORDER BY key;
 
@@ -96,13 +96,13 @@ CREATE VIEW test_jsonb_agg AS SELECT key::text, jsonb_agg(tval::text) AS j0, jso
 INSERT INTO cqobjectagg_stream (key, tval, fval, ival) VALUES ('x', 'text', 0.01, 42), ('x', 'more text', 0.01, 42), ('x', 'blaahhhh', 0.01, 42);
 INSERT INTO cqobjectagg_stream (key, tval, fval, ival) VALUES ('y', '4.2', 1.01, 42), ('z', '\"quoted\"', 2.01, 42), ('x', '', 0.01, 42), ('z', '2', '3', '4');
 
-SELECT key, array_sort(json_to_array(j0::json) COLLATE "en_US.utf8") FROM test_jsonb_agg ORDER BY key;
+SELECT key, array_sort(json_to_array(j0::json) COLLATE "C.utf8") FROM test_jsonb_agg ORDER BY key;
 SELECT key, array_sort(json_to_array(j1::json)) FROM test_jsonb_agg ORDER BY key;
 SELECT key, array_sort(json_to_array(j2::json)) FROM test_jsonb_agg ORDER BY key;
 
 INSERT INTO cqobjectagg_stream (key, tval, fval, ival) VALUES ('x', 'text', 0.01, 42), ('y', 'more text', 0.01, 42), ('z', 'blaahhhh', 0.01, 42);
 
-SELECT key, array_sort(json_to_array(j0::json) COLLATE "en_US.utf8") FROM test_jsonb_agg ORDER BY key;
+SELECT key, array_sort(json_to_array(j0::json) COLLATE "C.utf8") FROM test_jsonb_agg ORDER BY key;
 SELECT key, array_sort(json_to_array(j1::json)) FROM test_jsonb_agg ORDER BY key;
 SELECT key, array_sort(json_to_array(j2::json)) FROM test_jsonb_agg ORDER BY key;
 

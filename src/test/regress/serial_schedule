@@ -68,3 +68,4 @@ test: cont_matrel
 test: cont_index
 test: cont_part_basic
 test: cont_part_regress
+test: reindex_concurrent

@@ -375,11 +375,8 @@ try_nestloop_path(PlannerInfo *root,
 	required_outer = CompatCalcNestLoopRequiredOuter(outer_path,
 												  inner_path);
 	if (required_outer &&
-		((!bms_overlap(required_outer, extra->param_source_rels) &&
-		  !allow_star_schema_join(root, outer_path, inner_path)) ||
-		 have_dangerous_phv(root,
-							outer_path->parent->relids,
-							PATH_REQ_OUTER(inner_path))))
+		!bms_overlap(required_outer, extra->param_source_rels) &&
+		!allow_star_schema_join(root, outer_path, inner_path))
 	{
 		/* Waste no memory when we reject a path here */
 		bms_free(required_outer);
