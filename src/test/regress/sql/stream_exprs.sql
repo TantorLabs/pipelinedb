@@ -18,6 +18,6 @@ INSERT INTO test_exprs_stream (b) VALUES (false);
 INSERT INTO test_exprs_stream (t) VALUES ('text!');
 INSERT INTO test_exprs_stream (n) VALUES (1 - 1);
 
-SELECT * FROM test_stream_exprs ORDER BY b, t, n;
+SELECT * FROM test_stream_exprs ORDER BY b, t COLLATE "C", n;
 
 DROP FOREIGN TABLE test_exprs_stream CASCADE;

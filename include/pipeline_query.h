@@ -180,6 +180,7 @@ extern PipelineDDLLock AcquirePipelineDDLLock(void);
 extern void ReleasePipelineDDLLock(PipelineDDLLock lock);
 
 extern void SyncPipelineQuery(void);
+extern void SyncContViewIndexOids(void);
 extern void SyncContView(RangeVar *name);
 extern void SyncContQueryDefRel(Oid cqrelid);
 extern void SyncAllContQueryDefRels(void);

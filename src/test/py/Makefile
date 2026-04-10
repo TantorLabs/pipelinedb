@@ -9,7 +9,7 @@ extended:
 	$(CC) extended.c -I$(LIBPQ_INCLUDE) -L$(LIBPQ_LIB) -lpq -o $@
 
 test: all
-	py.test -v
+	py.test -v --junitxml=junit.xml
 
 clean:
 	rm -rf ../tmp/.pdb*

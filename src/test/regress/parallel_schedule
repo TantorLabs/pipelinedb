@@ -73,3 +73,8 @@ test: cont_alter cont_sw_object_agg pipeline_regress cont_grouping_sets cont_mat
 # Parallel group of tests
 #
 test: cont_part_basic cont_part_regress
+
+#
+# REINDEX CONCURRENTLY (needs its own group; cannot run concurrently)
+#
+test: reindex_concurrent

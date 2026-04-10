@@ -117,6 +117,7 @@ typedef struct
 	PlannedStmt *combine_plan;
 	PlannedStmt *groups_plan;
 	TimestampTz last_groups_plan;
+	List *groups_plan_indexes;
 	TupleDesc desc;
 	MemoryContext plan_cache_cxt;
 	MemoryContext combine_cxt;
@@ -330,6 +331,23 @@ get_cached_groups_plan(ContQueryCombinerState *state, List *values)
 	if (state->groups_plan != NULL &&
 			!TimestampDifferenceExceeds(state->last_groups_plan, GetCurrentTimestamp(), GROUPS_PLAN_LIFESPAN))
 	{
+		/*
+		 * REINDEX CONCURRENTLY replaces indexes under the same name with new
+		 * OIDs.  The planner embeds index OIDs into the plan, so a cached plan
+		 * that references a dropped index will fail at execution time.  Detect
+		 * this by comparing the matrel's current index list with the one we
+		 * saved when the plan was created.
+		 */
+		Relation matrel = table_open(state->base.query->matrelid, NoLock);
+		List *cur_indexes = RelationGetIndexList(matrel);
+		bool stale = !equal(cur_indexes, state->groups_plan_indexes);
+
+		table_close(matrel, NoLock);
+		list_free(cur_indexes);
+
+		if (stale)
+			goto replan;
+
 		if (values)
 			set_values(state->groups_plan, values);
 
@@ -338,7 +356,8 @@ get_cached_groups_plan(ContQueryCombinerState *state, List *values)
 		return plan;
 	}
 
-	/* cache miss, plan the query */
+replan:
+	/* cache miss or stale indexes, plan the query */
 	MemoryContextReset(state->plan_cache_cxt);
 
 	sel = makeNode(SelectStmt);
@@ -424,6 +443,14 @@ get_cached_groups_plan(ContQueryCombinerState *state, List *values)
 	old_cxt = MemoryContextSwitchTo(state->plan_cache_cxt);
 	state->groups_plan = copyObject(plan);
 	state->last_groups_plan = GetCurrentTimestamp();
+
+	{
+		Relation matrel = table_open(state->base.query->matrelid, NoLock);
+
+		state->groups_plan_indexes = list_copy(RelationGetIndexList(matrel));
+		table_close(matrel, NoLock);
+	}
+
 	MemoryContextSwitchTo(old_cxt);
 
 	return plan;
@@ -478,6 +505,7 @@ reset_groups_plan(ContQueryCombinerState *state)
 		pfree(state->groups_plan);
 		state->groups_plan = NULL;
 	}
+	state->groups_plan_indexes = NIL;
 }
 
 /*
@@ -2229,7 +2257,10 @@ sync_all(ContExecutor *cont_exec)
 		PG_END_TRY();
 
 		if (error)
+		{
+			ResetPhysicalGroupLookup();
 			ContExecutorAbortQuery(cont_exec);
+		}
 
 		TimestampDifference(start_time, GetCurrentTimestamp(), &secs, &usecs);
 		StatsIncrementCQExecMs(secs * 1000 + (usecs / 1000));
@@ -2870,7 +2901,18 @@ ContinuousQueryCombinerMain(void)
 			PG_END_TRY();
 
 			if (error)
+			{
 				StatsIncrementCQError(1);
+
+				/*
+				 * If an error occurred during select_existing_groups (e.g. a
+				 * stale index OID from REINDEX CONCURRENTLY), the portal is
+				 * torn down without running EndCustomScan, leaving the
+				 * module-static lookup_result set.  Clear it so the next
+				 * iteration's SetPhysicalGroupLookupOutput doesn't crash.
+				 */
+				ResetPhysicalGroupLookup();
+			}
 
 next:
 			ContExecutorEndQuery(cont_exec);

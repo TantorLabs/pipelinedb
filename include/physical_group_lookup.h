@@ -25,6 +25,7 @@ typedef struct PhysicalTupleData *PhysicalTuple;
 
 extern void SetPhysicalGroupLookupOutput(TupleHashTable output);
 extern void SetPhysicalGroupLookupPartitions(List *parts);
+extern void ResetPhysicalGroupLookup(void);
 extern Node *CreatePhysicalGroupLookupPath(RelOptInfo *joinrel, Path *path);
 extern Plan *CreatePhysicalGroupLookupPlan(Plan *outer);
 

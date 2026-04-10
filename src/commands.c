@@ -498,6 +498,14 @@ epilogue:
 				sync_pipeline_objects();
 		}
 
+		/*
+		 * REINDEX CONCURRENTLY drops old indexes and creates new ones with
+		 * different OIDs. Update cont_query.pkidxid/lookupidxid if they
+		 * became stale.
+		 */
+		if (pstmt->utilityStmt && IsA(pstmt->utilityStmt, ReindexStmt))
+			SyncContViewIndexOids();
+
 		if (exec_lock)
 			ReleaseContExecutionLock(exec_lock);
 

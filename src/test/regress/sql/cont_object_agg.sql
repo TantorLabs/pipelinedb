@@ -14,7 +14,7 @@ CREATE FUNCTION
       FROM
         (
           SELECT
-            UNNEST(array_vals_to_sort) COLLATE "en_US.utf8" AS val
+            UNNEST(array_vals_to_sort) COLLATE "C.utf8" AS val
           ORDER BY
             val
         ) AS sorted_vals

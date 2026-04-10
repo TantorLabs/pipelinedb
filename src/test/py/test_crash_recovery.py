@@ -1,57 +1,53 @@
 from base import pipeline, clean_db
+import getpass
 import os
+import psycopg2
 import random
 import signal
-from subprocess import check_output, CalledProcessError
 import threading
 import time
 
 
-def _get_pids(grep_str):
+def _get_pids(pipeline, backend_type_like):
+  """Get PIDs of pipelinedb background workers via pg_stat_activity."""
   try:
-    out = check_output('ps aux | grep "postgres" | grep "%s"' % grep_str,
-               shell=True).split(b'\n')
-  except CalledProcessError:
+    conn = psycopg2.connect(
+      'host=localhost dbname=postgres user=%s port=%d' % (
+        getpass.getuser(), pipeline.port))
+    conn.autocommit = True
+    cur = conn.cursor()
+    cur.execute(
+      "SELECT pid FROM pg_stat_activity WHERE backend_type LIKE %s",
+      (backend_type_like,))
+    pids = [row[0] for row in cur.fetchall()]
+    conn.close()
+    return pids
+  except Exception:
     return []
-  out = filter(lambda s: len(s), out)
-  if not out:
-    return []
-
-  pids = []
-  for line in out:
-    line = line.split()
-    pid = int(line[1].strip())
-    pids.append(pid)
-
-  return pids
 
 
-def _get_pid(grep_str):
-  pids = _get_pids(grep_str)
+def get_worker_pids(pipeline):
+  return _get_pids(pipeline, 'worker%')
+
+
+def get_combiner_pids(pipeline):
+  return _get_pids(pipeline, 'combiner%')
+
+
+def kill_worker(pipeline):
+  pids = get_worker_pids(pipeline)
   if not pids:
-    return -1
-  return random.choice(pids)
-
-
-def _kill(pid):
-  if pid <= 0:
     return False
-  os.kill(pid, signal.SIGTERM)
+  os.kill(random.choice(pids), signal.SIGTERM)
   return True
 
 
-def get_worker_pids():
-  return _get_pids('worker[0-9] \\[postgres\\]')
-
-def get_combiner_pids():
-  return _get_pids('combiner[0-9] \\[postgres\\]')
-
-def kill_worker():
-  return _kill(_get_pid('worker[0-9] \\[postgres\\]'))
-
-
-def kill_combiner():
-  return _kill(_get_pid('combiner[0-9] \\[postgres\\]'))
+def kill_combiner(pipeline):
+  pids = get_combiner_pids(pipeline)
+  if not pids:
+    return False
+  os.kill(random.choice(pids), signal.SIGTERM)
+  return True
 
 
 def test_simple_crash(pipeline, clean_db):
@@ -70,7 +66,7 @@ def test_simple_crash(pipeline, clean_db):
   # This batch can potentially get lost.
   pipeline.insert('stream0', ['x'], [(1,), (1,)])
 
-  assert kill_worker()
+  assert kill_worker(pipeline)
 
   pipeline.insert('stream0', ['x'], [(1,), (1,)])
 
@@ -80,7 +76,7 @@ def test_simple_crash(pipeline, clean_db):
   # This batch can potentially get lost.
   pipeline.insert('stream0', ['x'], [(1,), (1,)])
 
-  assert kill_combiner()
+  assert kill_combiner(pipeline)
 
   pipeline.insert('stream0', ['x'], [(1,), (1,)])
 
@@ -114,9 +110,9 @@ def test_concurrent_crash(pipeline, clean_db):
     for _ in range(30):
       r = random.random()
       if r > 0.85:
-        desc[0] += kill_combiner()
+        desc[0] += kill_combiner(pipeline)
       if r < 0.15:
-        desc[0] += kill_worker()
+        desc[0] += kill_worker(pipeline)
       time.sleep(0.1)
 
     desc[2] = True
@@ -171,10 +167,10 @@ def test_postmaster_worker_recovery(pipeline, clean_db):
   Verify that the postmaster only restarts crashed worker processes, and does not
   attempt to start them when the continuous query scheduler should.
   """
-  expected_workers = len(get_worker_pids())
+  expected_workers = len(get_worker_pids(pipeline))
   assert expected_workers > 0
 
-  expected_combiners = len(get_combiner_pids())
+  expected_combiners = len(get_combiner_pids(pipeline))
   assert expected_combiners > 0
 
   def backend():
@@ -220,5 +216,5 @@ def test_postmaster_worker_recovery(pipeline, clean_db):
   assert pipeline.conn
 
   # Now verify that we have the correct number of CQ worker procs
-  assert expected_workers == len(get_worker_pids())
-  assert expected_combiners == len(get_combiner_pids())
+  assert expected_workers == len(get_worker_pids(pipeline))
+  assert expected_combiners == len(get_combiner_pids(pipeline))
