@@ -440,6 +440,20 @@ lookup_tuple(Relation rel, int id, Datum keys[])
 	SysScanDesc scan;
 	int i;
 
+	/*
+	 * REINDEX CONCURRENTLY drops the old index and creates a new one with the
+	 * same name but a different OID. Re-resolve the index OID by name so that
+	 * stale cached OIDs don't cause "could not open relation with OID" errors.
+	 */
+	if (catalogdesc[id].indname)
+	{
+		Oid nsp = RelationGetNamespace(rel);
+		Oid resolved = get_relname_relid(catalogdesc[id].indname, nsp);
+
+		if (OidIsValid(resolved))
+			catalogdesc[id].indrelid = resolved;
+	}
+
 	desc = catalogdesc[id];
 
 	for (i = 0; i < desc.nkeys; i++)

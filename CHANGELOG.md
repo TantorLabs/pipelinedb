@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [1.4.2] - 2026-04-10
+
+### Fixed
+
+- Running `REINDEX CONCURRENTLY` (or `reindexdb --concurrently`) on a database
+  containing continuous views could crash all PipelineDB background workers with
+  "could not open relation with OID" errors, bringing down the entire server.
+  Subsequent stream inserts after the crash would also fail until a full restart.
+  Fixed by detecting when matrel index OIDs have been replaced and updating both
+  the internal catalog cache and the combiner's cached query plans accordingly
+  (TTDB-1505).
+
 ## [1.4.1] - 2025-09-16
 
 ### Added
@@ -138,7 +152,11 @@ This is the first formal Tantor release.
 
 This was the last release from [pipelinedb.com](https://www.pipelinedb.com) ([GitHub](https://github.com/pipelinedb/pipelinedb)).
 
-[unreleased]: https://gitlab.tantorlabs.ru/database/pipelinedb/-/compare/1.3.4-REL_16...REL_16_STABLE
+[unreleased]: https://gitlab.tantorlabs.ru/database/pipelinedb/-/compare/1.4.2-REL_16...REL_16_STABLE
+[1.4.2]: https://gitlab.tantorlabs.ru/database/pipelinedb/-/compare/1.4.1-REL_16...1.4.2-REL_16
+[1.4.1]: https://gitlab.tantorlabs.ru/database/pipelinedb/-/compare/1.4.0-REL_16...1.4.1-REL_16
+[1.4.0]: https://gitlab.tantorlabs.ru/database/pipelinedb/-/compare/1.3.5-REL_16...1.4.0-REL_16
+[1.3.5]: https://gitlab.tantorlabs.ru/database/pipelinedb/-/compare/1.3.4-REL_16...1.3.5-REL_16
 [1.3.4]: https://gitlab.tantorlabs.ru/database/pipelinedb/-/compare/1.3.3-REL_16...1.3.4-REL_16
 [1.3.3]: https://gitlab.tantorlabs.ru/database/pipelinedb/-/compare/1.3.2-REL_16...1.3.3-REL_16
 [1.3.2]: https://gitlab.tantorlabs.ru/database/pipelinedb/-/compare/1.3.1-REL_16...1.3.2-REL_16

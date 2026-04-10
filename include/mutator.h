@@ -13,7 +13,9 @@
 
 #include "nodes/parsenodes.h"
 
-extern Node * raw_expression_tree_mutator(Node *node, Node *(*walker) (),
+typedef Node *(*RawExprMutator) (Node *node, void *context);
+
+extern Node * raw_expression_tree_mutator(Node *node, RawExprMutator walker,
 									   void *context);
 
 #endif

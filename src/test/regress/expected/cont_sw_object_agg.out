@@ -15,7 +15,7 @@ CREATE FUNCTION
       FROM
         (
           SELECT
-            UNNEST(array_vals_to_sort) COLLATE "en_US.utf8" AS val
+            UNNEST(array_vals_to_sort) COLLATE "C.utf8" AS val
           ORDER BY
             val
         ) AS sorted_vals
@@ -114,7 +114,7 @@ SELECT key, array_sort(json_to_array(j0)) FROM test_sw_json_agg ORDER BY key;
 -----+---------------------------------------------------------------
  x   | {"\"\"","\"blaahhhh\"","\"more text\"","\"text\"","\"text\""}
  y   | {"\"4.2\"","\"more text\""}
- z   | {"\"2\"","\"blaahhhh\"","\"\\\\\\\"quoted\\\\\\\"\""}
+ z   | {"\"2\"","\"\\\\\\\"quoted\\\\\\\"\"","\"blaahhhh\""}
 (3 rows)
 
 SELECT key, array_sort(json_to_array(j1)) FROM test_sw_json_agg ORDER BY key;

@@ -12,14 +12,17 @@
 #include "access/htup.h"
 #include "access/htup_details.h"
 #include "access/reloptions.h"
+#include "access/relation.h"
 #include "access/detoast.h"
 #include "access/toast_internals.h"
 #include "access/heaptoast.h"
 #include "access/xact.h"
 #include "analyzer.h"
 #include "catalog.h"
+#include "catalog/index.h"
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
+#include "catalog/pg_index.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_rewrite.h"
@@ -2824,6 +2827,144 @@ SyncPipelineQuery(void)
 		{
 			PipelineCatalogTupleDelete(pipeline_query, &tup->t_self);
 			PurgeDeadProcStats(row->id);
+		}
+	}
+
+	heap_endscan(scan_desc);
+	table_close(pipeline_query, RowExclusiveLock);
+}
+
+/*
+ * SyncContViewIndexOids
+ *
+ * After REINDEX CONCURRENTLY, the old matrel index OIDs stored in cont_query
+ * (pkidxid, lookupidxid) become invalid because REINDEX CONCURRENTLY drops
+ * the old index and creates a new one under the same name. This function
+ * detects stale index OIDs and resolves them from the matrel's current indexes.
+ */
+void
+SyncContViewIndexOids(void)
+{
+	HeapTuple tup;
+	Relation pipeline_query;
+	TableScanDesc scan_desc;
+	Oid hash_group_oid;
+	Oid ls_hash_group_oid;
+
+	if (!IsTransactionState())
+		return;
+
+	InitPipelineCatalog();
+
+	if (!OidIsValid(PipelineQueryRelationOid))
+		return;
+
+	if (pg_class_aclcheck(PipelineQueryRelationOid, GetUserId(), ACL_UPDATE) != ACLCHECK_OK)
+		return;
+
+	hash_group_oid = GetHashGroupOid();
+	ls_hash_group_oid = GetLSHashGroupOid();
+
+	pipeline_query = table_open(PipelineQueryRelationOid, RowExclusiveLock);
+	scan_desc = table_beginscan_catalog(pipeline_query, 0, NULL);
+
+	while ((tup = heap_getnext(scan_desc, ForwardScanDirection)) != NULL)
+	{
+		Form_pipeline_query row = (Form_pipeline_query) GETSTRUCT(tup);
+		Relation matrel;
+		List *indexes;
+		ListCell *lc;
+		Oid new_pkidxid = InvalidOid;
+		Oid new_lookupidxid = InvalidOid;
+		Oid lookup_candidate = InvalidOid;
+		bool pk_stale;
+		bool lookup_stale;
+
+		if (row->type != PIPELINE_QUERY_VIEW)
+			continue;
+
+		if (!OidIsValid(row->matrelid))
+			continue;
+
+		pk_stale = OidIsValid(row->pkidxid) && get_rel_name(row->pkidxid) == NULL;
+		lookup_stale = OidIsValid(row->lookupidxid) && get_rel_name(row->lookupidxid) == NULL;
+
+		if (!pk_stale && !lookup_stale)
+			continue;
+
+		matrel = try_relation_open(row->matrelid, AccessShareLock);
+		if (matrel == NULL)
+			continue;
+
+		indexes = RelationGetIndexList(matrel);
+
+		foreach(lc, indexes)
+		{
+			Oid indexoid = lfirst_oid(lc);
+			HeapTuple idx_tup;
+			Form_pg_index idx_form;
+
+			idx_tup = SearchSysCache1(INDEXRELID, ObjectIdGetDatum(indexoid));
+			if (!HeapTupleIsValid(idx_tup))
+				continue;
+
+			idx_form = (Form_pg_index) GETSTRUCT(idx_tup);
+
+			if (pk_stale && idx_form->indisprimary)
+			{
+				new_pkidxid = indexoid;
+			}
+			else if (lookup_stale && !idx_form->indisprimary && idx_form->indisvalid)
+			{
+				Relation indexrel;
+				IndexInfo *indexInfo;
+
+				indexrel = index_open(indexoid, AccessShareLock);
+				indexInfo = BuildIndexInfo(indexrel);
+
+				if (indexInfo->ii_Expressions &&
+					list_length(indexInfo->ii_Expressions) == 1)
+				{
+					Node *n = linitial(indexInfo->ii_Expressions);
+
+					if (IsA(n, FuncExpr))
+					{
+						FuncExpr *func = (FuncExpr *) n;
+
+						if (func->funcid == hash_group_oid ||
+							func->funcid == ls_hash_group_oid)
+							new_lookupidxid = indexoid;
+					}
+				}
+
+				/*
+				 * Track single-column non-expression indexes as fallback
+				 * candidates for sliding-window CVs without GROUP BY,
+				 * which use a plain column index on the time column.
+				 */
+				if (!OidIsValid(new_lookupidxid) &&
+					!indexInfo->ii_Expressions &&
+					indexrel->rd_index->indnatts == 1)
+					lookup_candidate = indexoid;
+
+				index_close(indexrel, AccessShareLock);
+			}
+
+			ReleaseSysCache(idx_tup);
+		}
+
+		if (lookup_stale && !OidIsValid(new_lookupidxid) && OidIsValid(lookup_candidate))
+			new_lookupidxid = lookup_candidate;
+
+		relation_close(matrel, AccessShareLock);
+
+		if (OidIsValid(new_pkidxid) || OidIsValid(new_lookupidxid))
+		{
+			Oid pkid = OidIsValid(new_pkidxid) ? new_pkidxid : row->pkidxid;
+			Oid lid = OidIsValid(new_lookupidxid) ? new_lookupidxid : row->lookupidxid;
+
+			UpdateContViewIndexIds(pipeline_query, row->id, pkid, lid, row->seqrelid);
+			CommandCounterIncrement();
 		}
 	}
 

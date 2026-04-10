@@ -16,7 +16,7 @@
  * raw_expression_tree_mutator
  */
 Node *
-raw_expression_tree_mutator(Node *node, Node *(*mutator) (), void *context)
+raw_expression_tree_mutator(Node *node, RawExprMutator mutator, void *context)
 {
 	ListCell *temp;
 
