@@ -449,7 +449,7 @@ set_cardinality(PG_FUNCTION_ARGS)
 	Datum array;
 
 	if (PG_ARGISNULL(0))
-		PG_RETURN_INT64(0);
+		PG_RETURN_INT32(0);
 
 	array = DirectFunctionCall1(combinable_array_agg_finalfn, PG_GETARG_DATUM(0));
 	PG_RETURN_INT32(DirectFunctionCall2(array_length, array, Int32GetDatum(1)));

@@ -114,15 +114,13 @@ class PipelineDB(object):
         raise Exception('Failed to start up PipelineDB')
 
     # Add log tailer
-    def run():
-      while True:
-        if not self.proc:
-          break
-        line = self.proc.stderr.readline()
-        if line == '' and self.proc and self.proc.poll() != None:
-          return
-        sys.stderr.write(line.decode("utf-8"))
-    threading.Thread(target=run).start()
+    self.server_log = []
+    def run(stderr):
+      for line in iter(stderr.readline, b''):
+        self.server_log.append(line)
+        sys.stderr.write(line.decode('utf-8', 'replace'))
+    self.log_tailer = threading.Thread(target=run, args=(self.proc.stderr,))
+    self.log_tailer.start()
 
     # Wait to connect to PipelineDB
     for i in range(10):
@@ -169,7 +167,14 @@ class PipelineDB(object):
     if self.proc:
       self.proc.send_signal(signal.SIGINT)
       self.proc.wait()
+      self.log_tailer.join()
       self.proc = None
+
+  def log_contains(self, text):
+    """
+    Whether the server log of the last run contains the given bytes
+    """
+    return any(text in line for line in self.server_log)
 
   def destroy(self):
     """
