@@ -961,7 +961,7 @@ RETURNS internal
 AS 'MODULE_PATHNAME', 'set_agg_combine'
 LANGUAGE C IMMUTABLE PARALLEL SAFE;
 
-CREATE FUNCTION set_cardinality(internal, anynonarray)
+CREATE FUNCTION set_cardinality(internal)
 RETURNS integer
 AS 'MODULE_PATHNAME', 'set_cardinality'
 LANGUAGE C IMMUTABLE PARALLEL SAFE;
@@ -978,7 +978,7 @@ CREATE AGGREGATE set_agg(anynonarray) (
   parallel = safe
 );
 
-CREATE FUNCTION combinable_array_agg_finalfn2(internal, "any")
+CREATE FUNCTION combinable_array_agg_finalfn2(internal, internal)
 RETURNS "any"
 AS 'MODULE_PATHNAME', 'combinable_array_agg_finalfn'
 LANGUAGE C IMMUTABLE PARALLEL SAFE;
@@ -1008,7 +1008,6 @@ CREATE AGGREGATE partial_combine_set_agg(internal) (
 CREATE AGGREGATE exact_count_distinct(anynonarray) (
   sfunc = set_agg_trans,
   stype = internal,
-  finalfunc_extra,
   finalfunc = set_cardinality,
   combinefunc = set_agg_combine,
   deserialfunc = array_agg_deserialize,
@@ -1020,7 +1019,6 @@ CREATE AGGREGATE exact_count_distinct(anynonarray) (
 CREATE AGGREGATE combine_exact_count_distinct(internal) (
   sfunc = set_agg_combine,
   stype = internal,
-  finalfunc_extra,
   finalfunc = set_cardinality,
   combinefunc = set_agg_combine,
   deserialfunc = array_agg_deserialize,

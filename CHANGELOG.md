@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.3] - 2026-09-25
+
+### Fixed
+
+- `CREATE EXTENSION pipelinedb` failed on PostgreSQL 15.19 and later, which
+  reject implicit coercion of the `internal` pseudo-type (CVE-2026-14680). The
+  final functions of `exact_count_distinct`, `combine_exact_count_distinct` and
+  `combine_set_agg` now have exact signatures. Existing installations must run
+  `ALTER EXTENSION pipelinedb UPDATE` before `pg_upgrade` to a PostgreSQL
+  version that includes this fix (GL-60).
+- Stopping PostgreSQL, including during a cluster switchover or failover, could
+  crash PipelineDB worker processes with a segmentation fault (GL-62).
+
 ## [1.4.2] - 2026-04-10
 
 ### Fixed
@@ -158,14 +171,15 @@ This is the first formal Tantor release.
 
 This was the last release from [pipelinedb.com](https://www.pipelinedb.com) ([GitHub](https://github.com/pipelinedb/pipelinedb)).
 
-[unreleased]: https://gitlab.tantorlabs.ru/database/pipelinedb/-/compare/1.4.2-REL_17...REL_17_STABLE
-[1.4.2]: https://gitlab.tantorlabs.ru/database/pipelinedb/-/compare/1.4.1-REL_17...1.4.2-REL_17
-[1.4.1]: https://gitlab.tantorlabs.ru/database/pipelinedb/-/compare/1.4.0-REL_17...1.4.1-REL_17
-[1.4.0]: https://gitlab.tantorlabs.ru/database/pipelinedb/-/compare/1.3.5-REL_17...1.4.0-REL_17
-[1.3.5]: https://gitlab.tantorlabs.ru/database/pipelinedb/-/compare/1.3.4-REL_17...1.3.5-REL_17
-[1.3.4]: https://gitlab.tantorlabs.ru/database/pipelinedb/-/compare/1.3.3-REL_17...1.3.4-REL_17
-[1.3.3]: https://gitlab.tantorlabs.ru/database/pipelinedb/-/compare/1.3.2-REL_17...1.3.3-REL_17
-[1.3.2]: https://gitlab.tantorlabs.ru/database/pipelinedb/-/compare/1.3.1-REL_17...1.3.2-REL_17
-[1.3.1]: https://gitlab.tantorlabs.ru/database/pipelinedb/-/compare/1.3.0-REL_17...1.3.1-REL_17
-[1.3.0]: https://gitlab.tantorlabs.ru/database/pipelinedb/-/compare/1.0.0-13...1.3.0-REL_17
+[unreleased]: https://github.com/TantorLabs/pipelinedb/compare/1.4.3-REL_17...REL_17_STABLE
+[1.4.3]: https://github.com/TantorLabs/pipelinedb/compare/1.4.2-REL_17...1.4.3-REL_17
+[1.4.2]: https://github.com/TantorLabs/pipelinedb/compare/1.4.1-REL_17...1.4.2-REL_17
+[1.4.1]: https://github.com/TantorLabs/pipelinedb/compare/1.4.0-REL_17...1.4.1-REL_17
+[1.4.0]: https://github.com/TantorLabs/pipelinedb/compare/1.3.5-REL_17...1.4.0-REL_17
+[1.3.5]: https://github.com/TantorLabs/pipelinedb/compare/1.3.4-REL_17...1.3.5-REL_17
+[1.3.4]: https://github.com/TantorLabs/pipelinedb/compare/1.3.3-REL_17...1.3.4-REL_17
+[1.3.3]: https://github.com/TantorLabs/pipelinedb/compare/1.3.2-REL_17...1.3.3-REL_17
+[1.3.2]: https://github.com/TantorLabs/pipelinedb/compare/1.3.1-REL_17...1.3.2-REL_17
+[1.3.1]: https://github.com/TantorLabs/pipelinedb/compare/1.3.0-REL_17...1.3.1-REL_17
+[1.3.0]: https://github.com/TantorLabs/pipelinedb/compare/1.0.0-13...1.3.0-REL_17
 [1.0.0-13]: https://gitlab.tantorlabs.ru/database/pipelinedb/-/tags/1.0.0-13

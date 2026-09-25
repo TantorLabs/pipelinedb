@@ -15,6 +15,10 @@ PG_CONFIG := pg_config
 
 EXTENSION = pipelinedb
 REGRESS = $(EXTENSION)
+# pg_regress is invoked as: ... $(REGRESS_OPTS) $(REGRESS), so this adds an extra
+# test sql/pipelinedb.sql after serial_schedule. The file must exist and should
+# stay empty: pg_regress runs psql with query echo, so any SQL (even comments) would
+# appear in results/pipelinedb.out and fail the diff against expected/pipelinedb.out.
 # TODO: Parallel tests fail randomly. Needs to be investigated. For now, we
 # use serial_schedule instead of parallel_schedule
 REGRESS_OPTS = --schedule=./src/test/regress/serial_schedule \
@@ -26,8 +30,12 @@ REGRESS_OPTS = --schedule=./src/test/regress/serial_schedule \
   --bindir=$(bindir) \
   --temp-instance=./src/test/tmp/pgsql
 
+# pg_regress/initdb default to SQL_ASCII when the environment has no UTF-8 locale
+# (common in minimal Docker/CI). Pipelinedb and its regression SQL use COLLATE "C.utf8",
+# which requires a UTF-8 database encoding (see PostgreSQL PGXS: ENCODING / --encoding).
+ENCODING = UTF8
+
 DATA = $(shell find . -type f -name 'pipelinedb--*.sql')
-EXTRA_CLEAN = src/test/regress/expected/$(REGRESS).out src/test/regress/sql/$(REGRESS).sql
 SHLIB_LINK += -lzmq -lstdc++
 
 ifdef USE_PGXS
@@ -37,9 +45,6 @@ PG_CFLAGS += -ggdb
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 else
-
-$(shell touch src/test/regress/sql/$(REGRESS).sql)
-$(shell touch src/test/regress/expected/$(REGRESS).out)
 
 bindir = $(shell $(PG_CONFIG) --bindir)
 REGRESS_OPTS = --schedule=./src/test/regress/parallel_schedule \

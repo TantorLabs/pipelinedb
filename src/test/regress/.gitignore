@@ -1,7 +1,5 @@
 log/
 results/
-expected/pipelinedb.out
-sql/pipelinedb.sql
 regression.diffs
 regression.out
 
