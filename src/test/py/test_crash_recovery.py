@@ -139,6 +139,8 @@ def test_restart_recovery(pipeline, clean_db):
   pipeline.create_stream('stream0', x='int')
   q = 'SELECT COUNT(*) FROM stream0'
   pipeline.create_cv('test_restart_recovery', q)
+  # A transform without output stream readers is never executed by workers
+  pipeline.create_ct('test_restart_recovery_idle_ct', 'SELECT x FROM stream0')
 
   pipeline.insert('stream0', ['x'], [(1,), (1,)])
 
@@ -149,9 +151,16 @@ def test_restart_recovery(pipeline, clean_db):
   # empty. Not sure why.
   time.sleep(0.1)
 
-  # Restart.
+  # Restart. The PipelineDB SIGSEGV handler exits with code 1, which the
+  # postmaster treats as a normal exit, so crashes only show up in the log.
+  # Cleanup of queries dropped by earlier tests is expected to fail.
   pipeline.stop()
+  crashed = pipeline.log_contains(b'Segmentation fault')
+  cleanup_failed = pipeline.log_contains(
+    b'could not clean up continuous query "test_restart_recovery')
   pipeline.run()
+  assert not crashed
+  assert not cleanup_failed
 
   result = pipeline.execute('SELECT * FROM test_restart_recovery')[0]
   assert result['count'] == 2

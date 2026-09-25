@@ -38,6 +38,13 @@ CREATE INDEX tnotice_idx ON tnotice(x);
 -- No NOTICE should be given now that an index exists
 CREATE VIEW cvnotice3 AS SELECT s.x FROM analyze_cont_stream AS s, tnotice WHERE tnotice.x = s.x;
 
+-- Deactivate before DROP so workers release stream locks; avoids intermittent
+-- deadlocks (AccessExclusiveLock for cascade drop vs AccessShareLock on stream).
+SELECT pipelinedb.deactivate('cvnotice0');
+SELECT pipelinedb.deactivate('cvnotice1');
+SELECT pipelinedb.deactivate('cvnotice2');
+SELECT pipelinedb.deactivate('cvnotice3');
+
 DROP TABLE tnotice CASCADE;
 
 -- Verify that we can't do wildcard selections in continuous queries

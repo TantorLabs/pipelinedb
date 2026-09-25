@@ -81,6 +81,21 @@ set_cont_executor(PlanState *planstate, ContExecutor *exec)
 }
 
 /*
+ * forget_executor_state
+ *
+ * Plans are initialized and ended for each execution, so the executor
+ * structures referenced by the QueryDesc must not outlive their EState.
+ */
+static void
+forget_executor_state(QueryDesc *query_desc)
+{
+	query_desc->estate = NULL;
+	query_desc->planstate = NULL;
+	query_desc->tupDesc = NULL;
+	query_desc->totaltime = NULL;
+}
+
+/*
  * init_query_state
  */
 static ContQueryState *
@@ -177,6 +192,7 @@ init_query_state(ContExecutor *exec, ContQueryState *base)
 	 */
 	ExecEndNode(state->query_desc->planstate);
 	FreeExecutorState(state->query_desc->estate);
+	forget_executor_state(state->query_desc);
 
 	CurrentResourceOwner = res;
 
@@ -246,8 +262,10 @@ init_plan(ContQueryWorkerState *state)
 static bool
 cleanup_worker_state(ContQueryWorkerState *state)
 {
-	QueryDesc *query_desc;
-	volatile EState *estate = NULL;
+	QueryDesc *query_desc = state->query_desc;
+	MemoryContext oldcxt = CurrentMemoryContext;
+	EState *estate;
+	volatile bool snapshot_pushed = false;
 	volatile bool result = false;
 
 	/*
@@ -256,17 +274,14 @@ cleanup_worker_state(ContQueryWorkerState *state)
 	 */
 	PG_TRY();
 	{
-		query_desc = state->query_desc;
-		estate = query_desc->estate;
-
 		(*state->dest->rShutdown) (state->dest);
 
-		if (estate == NULL)
-		{
-			estate = CreateEState(state->query_desc);
-			query_desc->estate = (EState *) estate;
-			SetEStateSnapshot((EState *) estate);
-		}
+		forget_executor_state(query_desc);
+
+		estate = CreateEState(query_desc);
+		query_desc->estate = estate;
+		SetEStateSnapshot(estate);
+		snapshot_pushed = true;
 
 		/* The cleanup functions below expect these things to be registered. */
 		RegisterSnapshotOnOwner(estate->es_snapshot, WorkerResOwner);
@@ -274,35 +289,39 @@ cleanup_worker_state(ContQueryWorkerState *state)
 
 		CurrentResourceOwner = WorkerResOwner;
 
-		if (query_desc->totaltime)
-			InstrStopNode(query_desc->totaltime, estate->es_processed);
+		AcquireRewriteLocks(copyObject(state->base.query->cvdef_orig), true, false);
+		AcquireRewriteLocks(copyObject(state->base.query->cvdef), true, false);
+		init_plan(state);
 
-		if (query_desc->planstate == NULL)
-		{
-			AcquireRewriteLocks(copyObject(state->base.query->cvdef_orig), true, false);
-			AcquireRewriteLocks(copyObject(state->base.query->cvdef), true, false);
-			init_plan(state);
-		}
-
-		/* Clean up. */
+		/* Clean up. ExecutorEnd() frees estate. */
 		ExecutorFinish(query_desc);
 		ExecutorEnd(query_desc);
-		UnsetEStateSnapshot((EState *) estate);
+		PopActiveSnapshot();
+		snapshot_pushed = false;
 
 		FreeQueryDesc(query_desc);
 	}
 	PG_CATCH();
 	{
+		ErrorData *edata;
+
 		/*
 		 * If this happens, it almost certainly means that a stream or table has been dropped
 		 * and no longer exists, even though the ended plan may have references to them. We're
-		 * not doing anything particularly critical in the above TRY block, so just consume these
-		 * harmless errors.
+		 * not doing anything particularly critical in the above TRY block, so just log these
+		 * errors without failing.
 		 */
+		MemoryContextSwitchTo(oldcxt);
+		edata = CopyErrorData();
 		FlushErrorState();
 
-		if (estate && ActiveSnapshotSet())
-			UnsetEStateSnapshot((EState *) estate);
+		ereport(LOG,
+				(errmsg("could not clean up continuous query \"%s\": %s",
+						state->base.query->name->relname, edata->message)));
+		FreeErrorData(edata);
+
+		if (snapshot_pushed && ActiveSnapshotSet())
+			PopActiveSnapshot();
 
 		result = true;
 	}
@@ -413,7 +432,7 @@ ContinuousQueryWorkerMain(void)
 
 				UnsetEStateSnapshot((EState *) estate);
 				FreeExecutorState((EState *) estate);
-				state->query_desc->estate = NULL;
+				forget_executor_state(state->query_desc);
 				estate = NULL;
 
 				MemoryContextResetAndDeleteChildren(state->base.tmp_cxt);
@@ -438,6 +457,8 @@ ContinuousQueryWorkerMain(void)
 
 			if (error)
 			{
+				/* The failed execution's EState is abandoned along with the transaction */
+				forget_executor_state(state->query_desc);
 				ContExecutorAbortQuery(cont_exec);
 				StatsIncrementCQError(1);
 			}
