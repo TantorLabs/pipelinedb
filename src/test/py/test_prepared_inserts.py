@@ -59,10 +59,11 @@ def test_prepared_extended(pipeline, clean_db):
   # This will insert 1000 via a paramaterized insert, and 1000 via unparamaterized insert
   cmd = ['./extended', 'postgres', str(pipeline.port), 'extended_stream', '1000']
 
-  stdout, stderr = subprocess.Popen(cmd).communicate()
-
-  assert stdout is None
-  assert stderr is None
+  completed = subprocess.run(cmd, capture_output=True, text=True)
+  assert completed.returncode == 0, (
+      'extended failed with exit %d\nstderr:\n%s\nstdout:\n%s'
+      % (completed.returncode, completed.stderr, completed.stdout)
+  )
 
   rows = pipeline.execute('SELECT x, y, z FROM test_prepared_extended')
   assert len(rows) == 1
