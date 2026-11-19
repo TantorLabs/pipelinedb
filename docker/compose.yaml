@@ -1,0 +1,29 @@
+# Compose cannot read pipelinedb.control, so values that must be known here come
+# from environment variables (shell or docker/.env). See docker/README.md.
+name: pipelinedb-dev-${PG_MAJOR:-local}
+
+services:
+  dev:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        # Empty means "read pg_major from pipelinedb.control".
+        PG_MAJOR: ${PG_MAJOR:-}
+        BASE_IMAGE: ${BASE_IMAGE:-ubuntu:26.04}
+        USER_UID: ${USER_UID:-1000}
+        USER_GID: ${USER_GID:-1000}
+    image: pipelinedb-dev:${PG_MAJOR:-local}
+    working_dir: /src
+    volumes:
+      - ..:/src
+    # PostgreSQL's dynamic shared memory lives in /dev/shm; Docker's 64MB default
+    # is too small with max_worker_processes=128 and parallel query in the tests.
+    shm_size: 1g
+    # For gdb attaching to backends / background workers.
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+    stdin_open: true
+    tty: true

@@ -18,6 +18,7 @@
 typedef struct PhysicalTupleData
 {
 	HeapTuple tuple;	/* physical tuple belonging to this entry */
+	Oid source_relid;	/* relation that owns tuple->t_self */
 	char flags;
 }	PhysicalTupleData;
 
