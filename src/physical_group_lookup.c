@@ -215,7 +215,7 @@ begin_lookup_scan(CustomScanState *cscan, EState *estate, int eflags)
  * output_physical_tuple
  */
 static void
-output_physical_tuple(TupleTableSlot *slot)
+output_physical_tuple(TupleTableSlot *slot, Oid source_relid)
 {
 	bool isnew;
 	PhysicalTuple pt;
@@ -229,6 +229,7 @@ output_physical_tuple(TupleTableSlot *slot)
 
 	pt = palloc0(sizeof(PhysicalTupleData));
 	pt->tuple = ExecCopySlotHeapTuple(slot);
+	pt->source_relid = source_relid;
 
 	mslot = MakeSingleTupleTableSlot(slot->tts_tupleDescriptor,
 									 &TTSOpsMinimalTuple);
@@ -249,12 +250,13 @@ output_physical_tuple(TupleTableSlot *slot)
 static TupleTableSlot *
 seqscan_lookup_next(struct CustomScanState *node)
 {
-	TupleTableSlot *result = ExecProcNode((PlanState *) outerPlanState(node));
+	ScanState *scan = (ScanState *) outerPlanState(node);
+	TupleTableSlot *result = ExecProcNode(&scan->ps);
 
 	if (TupIsNull(result))
 		return NULL;
 
-	output_physical_tuple(result);
+	output_physical_tuple(result, RelationGetRelid(scan->ss_currentRelation));
 
 	return result;
 }
@@ -355,7 +357,7 @@ lnext:
 			elog(ERROR, "unrecognized heap_lock_tuple status: %u", res);
 	}
 
-	output_physical_tuple(slot);
+	output_physical_tuple(slot, RelationGetRelid(rel));
 
 	return slot;
 }

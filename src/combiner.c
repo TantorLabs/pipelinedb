@@ -63,6 +63,7 @@
 #include "utils/builtins.h"
 #include "utils/datum.h"
 #include "utils/fmgroids.h"
+#include "utils/fmgrprotos.h"
 #include "utils/hsearch.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
@@ -796,15 +797,29 @@ close_matrel_partitions(ContQueryCombinerState *state)
 static ResultRelInfo *
 open_target_matrel_partition(ContQueryCombinerState *state, Relation matrel, TupleTableSlot *slot)
 {
+	MatRelPartitionKey key;
 	Oid part_oid;
 	bool found;
 	MatRelPartitionEntry *entry;
 	MemoryContext old;
 
-	part_oid = get_matrel_partition_for_tuple(state, matrel, slot, NULL);
+	part_oid = get_matrel_partition_for_tuple(state, matrel, slot, &key);
 
 	if (!OidIsValid(part_oid))
-		return NULL;
+	{
+		Oid outfunc;
+		bool isvarlena;
+
+		getTypeOutputInfo(key.typid, &outfunc, &isvarlena);
+		ereport(ERROR,
+				(errcode(ERRCODE_CHECK_VIOLATION),
+				 errmsg("no partition of materialization table \"%s\" found for row",
+						RelationGetRelationName(matrel)),
+				 errdetail("Partition key of the failing row contains (%s) = (%s).",
+						   NameStr(TupleDescAttr(state->desc, state->base.query->partition_attno - 1)->attname),
+						   OidOutputFunctionCall(outfunc, key.value)),
+				 errtable(matrel)));
+	}
 
 	old = MemoryContextSwitchTo(ContQueryBatchContext);
 
@@ -1393,9 +1408,6 @@ gc_cached_overlay_tuples(ContQueryCombinerState *state,
 	TupleHashIterator seq;
 	TupleTableSlot *slot;
 
-	slot = MakeSingleTupleTableSlot(state->slot->tts_tupleDescriptor,
-									 &TTSOpsHeapTuple);
-
 	InitTupleHashIterator(state->sw->overlay_groups, &seq);
 	while ((entry = (TupleHashEntry) ScanTupleHashTable(state->sw->overlay_groups, &seq)) != NULL)
 	{
@@ -1419,8 +1431,8 @@ gc_cached_overlay_tuples(ContQueryCombinerState *state,
 		values[OLD_TUPLE] = heap_copy_tuple_as_datum(tup, state->overlay_desc);
 
 		os_tup = heap_form_tuple(state->os_slot->tts_tupleDescriptor, values, nulls);
-		ExecStoreHeapTuple(os_tup, slot, false);
-		ExecStreamInsert(NULL, osri, slot, NULL);
+		ExecStoreHeapTuple(os_tup, state->os_slot, false);
+		ExecStreamInsert(NULL, osri, state->os_slot, NULL);
 	}
 
 	slot = MakeSingleTupleTableSlot(state->slot->tts_tupleDescriptor,
@@ -1901,10 +1913,16 @@ combine(ContQueryCombinerState *state, bool lookup)
 	}
 	tuplestore_clear(state->combined);
 
+	/*
+	 * Open the matrel before creating the portal: if the CV was dropped
+	 * concurrently, this errors out, and the combiner doesn't abort its
+	 * transaction on errors. A portal left in PORTAL_NEW state can't be
+	 * dropped, so every later CreatePortal and commit would fail on it.
+	 */
+	open_matrel_and_parts(state, &matrel, &parts, AccessShareLock);
+
 	portal = CreatePortal("combine", true, true);
 	portal->visible = false;
-
-	open_matrel_and_parts(state, &matrel, &parts, AccessShareLock);
 
 	/*
 	 * Note: we can use the matrel name here because only its schema can potentially change
@@ -2125,7 +2143,22 @@ sync_combine(ContQueryCombinerState *state)
 			 * If this is a partitioned matrel, get the partition that this write belongs to
 			 */
 			if (IS_PARTITIONED_MATREL(state))
+			{
 				leaf_ri = open_target_matrel_partition(state, ri->ri_RelationDesc, hslot);
+				/* A CTID is only meaningful within its source relation. */
+				if (update->source_relid != RelationGetRelid(leaf_ri->ri_RelationDesc))
+					ereport(ERROR,
+							(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+							 errmsg("cross-partition update of materialization table \"%s\" is not supported",
+									RelationGetRelationName(matrel)),
+							 errdetail("The updated row %s of partition \"%s\" (OID %u) belongs to partition \"%s\" (OID %u).",
+									   DatumGetCString(DirectFunctionCall1(tidout, PointerGetDatum(&tup->t_self))),
+									   get_rel_name(update->source_relid), update->source_relid,
+									   RelationGetRelationName(leaf_ri->ri_RelationDesc),
+									   RelationGetRelid(leaf_ri->ri_RelationDesc)),
+							 errhint("Group the continuous view by the time bucket of its partition column, so that each group stays within one partition."),
+							 errtable(matrel)));
+			}
 
 			if (!ExecCQMatRelUpdate(leaf_ri, hslot, estate))
 				continue;

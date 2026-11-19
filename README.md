@@ -36,6 +36,8 @@ If you'd like to build Tantor PipelineDB from source, keep reading!
 
 ## Building from source
 
+To build and test in a container with all dependencies preinstalled instead of setting them up on your host, see [docker/README.md](docker/README.md).
+
 Since Tantor PipelineDB is a PostgreSQL extension, you'll need to have the [PostgreSQL development packages](https://www.postgresql.org/download/) installed to build Tantor PipelineDB.
 
 Next you'll have to install [ZeroMQ](http://zeromq.org/) which Tantor PipelineDB uses for inter-process communicatio:

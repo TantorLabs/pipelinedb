@@ -12,36 +12,16 @@ PG_PREFIX="${PG_PREFIX:-/usr/local/pgsql}"
 #   Architectures: amd64, arm64, ppc64el
 #   PostgreSQL: 13–19 (19 includes devel)
 
-detect_postgres_version() {
-	local branch
+CONTROL_FILE="$(dirname "$0")/../pipelinedb.control"
 
+detect_postgres_version() {
 	if [ -n "${POSTGRES_VERSION:-}" ]; then
 		return
 	fi
 
-	if [ -n "${GITLAB_CI:-}" ]; then
-		echo "Detected GitLab CI"
-		if [ -n "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME:-}" ]; then
-			branch="$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
-		else
-			branch="$CI_COMMIT_REF_NAME"
-		fi
-	elif [ -n "${GITHUB_ACTIONS:-}" ]; then
-		echo "Detected GitHub Actions"
-		if [ -n "${GITHUB_BASE_REF:-}" ]; then
-			branch="$GITHUB_BASE_REF"
-		else
-			branch="$GITHUB_REF_NAME"
-		fi
-	else
-		echo "Warning: Not running in known CI environment"
-		exit 1
-	fi
-
-	# Accepts REL_N_STABLE as well as feature branches such as GL-60-REL_15.
-	POSTGRES_VERSION=$( [[ $branch =~ (^|[^A-Za-z0-9])REL_([0-9]+)($|[^0-9]) ]] && echo "${BASH_REMATCH[2]}" )
+	POSTGRES_VERSION=$(sed -n -e 's/^#[[:space:]]*pg_major[[:space:]]*=[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$CONTROL_FILE")
 	if [ -z "${POSTGRES_VERSION:-}" ]; then
-		echo "Could not derive PostgreSQL major from branch: $branch"
+		echo "Could not read pg_major from $CONTROL_FILE"
 		exit 1
 	fi
 }
@@ -152,14 +132,33 @@ ensure_postgres_user() {
 	fi
 }
 
+# git.postgresql.org can drop connections mid-clone, so retry and fall back to
+# the GitHub mirror. POSTGRES_GIT_URL overrides the list of repositories.
+clone_postgresql_branch() {
+	local branch="$1"
+	local repos="${POSTGRES_GIT_URL:-https://git.postgresql.org/git/postgresql.git https://github.com/postgres/postgres.git}"
+	local repo attempt
+
+	for repo in $repos; do
+		for attempt in 1 2 3; do
+			rm -rf "$PG_SRC_ROOT"
+			if git clone --depth 1 --single-branch --branch "$branch" "$repo" "$PG_SRC_ROOT"; then
+				return 0
+			fi
+			sleep $((attempt * 5))
+		done
+	done
+
+	echo "Could not clone $branch from any of: $repos"
+	return 1
+}
+
 build_and_install_postgresql_from_source() {
 	local pg_branch="REL_${POSTGRES_VERSION}_STABLE"
-	local repo="${POSTGRES_GIT_URL:-https://git.postgresql.org/git/postgresql.git}"
 
 	install_build_deps_source_postgresql
 
-	rm -rf "$PG_SRC_ROOT"
-	git clone --depth 1 --single-branch --branch "$pg_branch" "$repo" "$PG_SRC_ROOT"
+	clone_postgresql_branch "$pg_branch"
 
 	export PG_PREFIX="${PG_PREFIX}-${POSTGRES_VERSION}"
 	cd "$PG_SRC_ROOT"
@@ -206,7 +205,7 @@ run_pipelinedb_build_and_test() {
 
 main() {
 	detect_postgres_version
-	echo "PostgreSQL major (from branch): $POSTGRES_VERSION"
+	echo "PostgreSQL major: $POSTGRES_VERSION"
 
 	install_base_packages
 

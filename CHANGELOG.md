@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.4] - 2026-11-19
+
+### Fixed
+
+- Dropping a continuous view while its stream was being written to could leave
+  a combiner process failing every batch with "too many active hash_seq_search
+  scans" errors, so continuous views stopped updating and the server log grew
+  without bound (GL-63).
+- Sliding-window continuous views with an output stream failed with "datum
+  attribute ... does not match deforming descriptor's atttypid" when groups
+  expired, on PostgreSQL 15.20, 16.16, 17.12, 18.7 and later minor releases
+  (GL-64).
+- The shared memory area for microbatch acknowledgements was 8 bytes too small,
+  and the statistics hash tables could grow past the shared memory reserved for
+  them (GL-65).
+- The `combinable_json_agg`, `combinable_jsonb_agg` and
+  `combinable_json[b]_object_agg` aggregates ran cast functions to `json`
+  without checking the caller's `EXECUTE` privilege (CVE-2026-116303, GL-66).
+- A partitioned continuous view could corrupt data pages of its partitions when
+  an aggregate update moved a group to another partition, for example when the
+  partition column is `max()` of the event time and it is not in the
+  `GROUP BY` clause. A combiner could also crash when no partition covered an
+  incoming row. In both cases the combiner now reports an error and the events
+  of that batch are lost. Group such views by the time bucket of the partition
+  column and keep partition bounds free of gaps (PMM-12603).
+
 ## [1.4.3] - 2026-09-25
 
 ### Fixed
@@ -171,15 +197,12 @@ This is the first formal Tantor release.
 
 This was the last release from [pipelinedb.com](https://www.pipelinedb.com) ([GitHub](https://github.com/pipelinedb/pipelinedb)).
 
-[unreleased]: https://github.com/TantorLabs/pipelinedb/compare/1.4.3-REL_17...REL_17_STABLE
+[unreleased]: https://github.com/TantorLabs/pipelinedb/compare/1.4.4-REL_17...REL_17_STABLE
+[1.4.4]: https://github.com/TantorLabs/pipelinedb/compare/1.4.3-REL_17...1.4.4-REL_17
 [1.4.3]: https://github.com/TantorLabs/pipelinedb/compare/1.4.2-REL_17...1.4.3-REL_17
 [1.4.2]: https://github.com/TantorLabs/pipelinedb/compare/1.4.1-REL_17...1.4.2-REL_17
 [1.4.1]: https://github.com/TantorLabs/pipelinedb/compare/1.4.0-REL_17...1.4.1-REL_17
 [1.4.0]: https://github.com/TantorLabs/pipelinedb/compare/1.3.5-REL_17...1.4.0-REL_17
 [1.3.5]: https://github.com/TantorLabs/pipelinedb/compare/1.3.4-REL_17...1.3.5-REL_17
-[1.3.4]: https://github.com/TantorLabs/pipelinedb/compare/1.3.3-REL_17...1.3.4-REL_17
-[1.3.3]: https://github.com/TantorLabs/pipelinedb/compare/1.3.2-REL_17...1.3.3-REL_17
-[1.3.2]: https://github.com/TantorLabs/pipelinedb/compare/1.3.1-REL_17...1.3.2-REL_17
-[1.3.1]: https://github.com/TantorLabs/pipelinedb/compare/1.3.0-REL_17...1.3.1-REL_17
-[1.3.0]: https://github.com/TantorLabs/pipelinedb/compare/1.0.0-13...1.3.0-REL_17
-[1.0.0-13]: https://gitlab.tantorlabs.ru/database/pipelinedb/-/tags/1.0.0-13
+[1.3.4]: https://github.com/TantorLabs/pipelinedb/tree/1.3.4-REL_17
+[1.0.0-13]: https://github.com/pipelinedb/pipelinedb/tree/1.0.0-13
