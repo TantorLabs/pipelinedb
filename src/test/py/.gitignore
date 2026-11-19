@@ -7,3 +7,4 @@
 test_binary_upgrade_data_dir*
 test_tablespace/
 .cache
+/junit.xml

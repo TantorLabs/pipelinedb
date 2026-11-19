@@ -13,6 +13,7 @@
 
 #include "access/htup_details.h"
 #include "access/transam.h"
+#include "catalog/objectaccess.h"
 #include "catalog/pg_type.h"
 #include "executor/spi.h"
 #include "funcapi.h"
@@ -21,6 +22,7 @@
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
 #include "parser/parse_coerce.h"
+#include "utils/acl.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/date.h"
@@ -926,6 +928,7 @@ datum_to_json(Datum val, bool is_null, StringInfo result,
 {
 	char	   *outputstr;
 	text	   *jsontext;
+	AclResult	aclresult;
 
 	check_stack_depth();
 
@@ -1044,6 +1047,11 @@ datum_to_json(Datum val, bool is_null, StringInfo result,
 			break;
 		case JSONTYPE_CAST:
 			/* outfuncoid refers to a cast function, not an output function */
+			aclresult = pg_proc_aclcheck(outfuncoid, GetUserId(), ACL_EXECUTE);
+			if (aclresult != ACLCHECK_OK)
+				aclcheck_error(aclresult, OBJECT_FUNCTION,
+							   get_func_name(outfuncoid));
+			InvokeFunctionExecuteHook(outfuncoid);
 			jsontext = DatumGetTextPP(OidFunctionCall1(outfuncoid, val));
 			outputstr = text_to_cstring(jsontext);
 			appendStringInfoString(result, outputstr);

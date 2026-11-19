@@ -42,6 +42,7 @@
 #include "optimizer/optimizer.h"
 #include "optimizer/planner.h"
 #include "nodes/makefuncs.h"
+#include "nodes/nodeFuncs.h"
 #include "parser/parse_coerce.h"
 #include "parser/parse_collate.h"
 #include "parser/parse_expr.h"
@@ -179,6 +180,7 @@ DoStreamCopy(ParseState *pstate, const CopyStmt *stmt,
 
 			whereClause = (Node *) canonicalize_qual((Expr *) whereClause, false);
 			whereClause = (Node *) make_ands_implicit((Expr *) whereClause);
+			fix_opfuncids(whereClause);
 		}
 
 		tupDesc = RelationGetDescr(rel);

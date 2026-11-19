@@ -39,6 +39,10 @@
 
 PG_MODULE_MAGIC;
 
+#if defined(PIPELINE_PG_MAJOR) && PG_VERSION_NUM / 10000 != PIPELINE_PG_MAJOR
+#error "PostgreSQL major version does not match pg_major in pipelinedb.control"
+#endif
+
 static shmem_startup_hook_type save_shmem_startup_hook;
 static shmem_request_hook_type save_shmem_request_hook;
 

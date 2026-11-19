@@ -61,8 +61,8 @@ MicrobatchAckShmemSize(void)
 {
 	Size size;
 
-	size = sizeof(MicrobatchAckShmemStruct);
-	size = mul_size(sizeof(microbatch_ack_t), MAX_MICROBATCHES);
+	size = offsetof(MicrobatchAckShmemStruct, acks);
+	size = add_size(size, mul_size(sizeof(microbatch_ack_t), MAX_MICROBATCHES));
 
 	return size;
 }
