@@ -1,0 +1,214 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [1.4.4] - 2026-11-19
+
+### Added
+
+- Support for PostgreSQL 19 (GL-68).
+
+### Fixed
+
+- Dropping a continuous view while its stream was being written to could leave
+  a combiner process failing every batch with "too many active hash_seq_search
+  scans" errors, so continuous views stopped updating and the server log grew
+  without bound (GL-63).
+- Sliding-window continuous views with an output stream failed with "datum
+  attribute ... does not match deforming descriptor's atttypid" when groups
+  expired, on PostgreSQL 15.20, 16.16, 17.12, 18.7 and later minor releases
+  (GL-64).
+- The shared memory area for microbatch acknowledgements was 8 bytes too small,
+  and the statistics hash tables could grow past the shared memory reserved for
+  them (GL-65).
+- The `combinable_json_agg`, `combinable_jsonb_agg` and
+  `combinable_json[b]_object_agg` aggregates ran cast functions to `json`
+  without checking the caller's `EXECUTE` privilege (CVE-2026-116303, GL-66).
+- A partitioned continuous view could corrupt data pages of its partitions when
+  an aggregate update moved a group to another partition, for example when the
+  partition column is `max()` of the event time and it is not in the
+  `GROUP BY` clause. A combiner could also crash when no partition covered an
+  incoming row. In both cases the combiner now reports an error and the events
+  of that batch are lost. Group such views by the time bucket of the partition
+  column and keep partition bounds free of gaps (PMM-12603).
+
+## [1.4.3] - 2026-09-25
+
+### Fixed
+
+- `CREATE EXTENSION pipelinedb` failed on PostgreSQL 15.19 and later, which
+  reject implicit coercion of the `internal` pseudo-type (CVE-2026-14680). The
+  final functions of `exact_count_distinct`, `combine_exact_count_distinct` and
+  `combine_set_agg` now have exact signatures. Existing installations must run
+  `ALTER EXTENSION pipelinedb UPDATE` before `pg_upgrade` to a PostgreSQL
+  version that includes this fix (GL-60).
+- Stopping PostgreSQL, including during a cluster switchover or failover, could
+  crash PipelineDB worker processes with a segmentation fault (GL-62).
+
+## [1.4.2] - 2026-04-10
+
+### Fixed
+
+- Running `REINDEX CONCURRENTLY` (or `reindexdb --concurrently`) on a database
+  containing continuous views could crash all PipelineDB background workers with
+  "could not open relation with OID" errors, bringing down the entire server.
+  Subsequent stream inserts after the crash would also fail until a full restart.
+  Fixed by detecting when matrel index OIDs have been replaced and updating both
+  the internal catalog cache and the combiner's cached query plans accordingly
+  (TTDB-1505).
+- Incompatibility with the final Postgres 18 release leading to a compilation error
+
+## [1.4.1] - 2025-09-16
+
+### Added
+
+- New configuration parameter `pipelinedb.ipc_socket_directory` to specify a
+  custom directory for IPC Unix-domain sockets. This addresses incompatibility
+  issues with backup utilities that would throw errors when attempting to copy
+  socket files created in the data directory. By default, IPC sockets are now
+  created in `/tmp` instead of the data directory (GL-53).
+
+## [1.4.0] - 2025-08-29
+
+### Added
+
+- It is now possible to specify `NOT NULL` constraints on stream columns. Rows
+  violating `NOT NULL` constraints are now rejected with appropriate error
+  messages (GL-52).
+- It is now possible to specify `DEFAULT` values in stream definitions. Default
+  expressions are now evaluated during row ingestion (GL-52).
+- Added support for `ALTER FOREIGN TABLE ... ALTER COLUMN ... SET DEFAULT` and
+  `ALTER FOREIGN TABLE ... ALTER COLUMN ... DROP DEFAULT` commands for streams
+  (GL-52).
+
+### Fixed
+
+- Dumps created with `pg_dump` for streams containing `SERIAL` columns can now
+  be restored successfully (GL-52).
+- Automatically created primary key columns on CV materialized relations had an
+  incorrect type modifier. That created problems when attaching manually created
+  tables or tables restored from a dump as new partitions to partitioned
+  materialized relations (GL-46).
+- Potential integer overflow could lead to errors in the Top-K function
+  processing (TTDB-848).
+- Potential null pointer dereference could lead to errors in continuous queries
+  involving the `string_agg()` function (TTDB-851).
+
+## [1.3.5] - 2025-06-18
+
+### Added
+
+- Human-readable changelog in CHANGELOG.md (GL-39).
+- Support for PostgreSQL 18 (GL-45).
+
+### Fixed
+
+- Regression introduced in 1.3.4 leading to assertion failures in reaper
+  processes on cassert-enabled PostgreSQL builds (GL-40).
+- Two potential cases of uninitialized variables usage reported by Clang
+  (GL-33).
+- Development and testing scripts were ported to Python 3 (GL-41).
+- Combiner processes used the server timezone when defining range bounds for
+  automatically created partitions, if the partitioning attribute was of the
+  TIMESTAMP WITH TIME ZONE type. That resulted in problems caused by overlapping
+  or disjoint partition ranges after the default server timezone has changed for
+  whatever reasons. Fixed by sticking to UTC when rounding timestamptz values to
+  calculate partition range bounds (GL-44).
+- Installing Tantor PipelineDB on PostgreSQL 17 could lead to the "function
+  interval_combine() does not exist" error (GL-49).
+- The sliding-window queries could work incorrectly or lead to a combiner
+  process crash (GL-50).
+
+## [1.3.4] - 2025-02-20
+
+### Added
+
+- Support for PostgreSQL 17.
+
+### Fixed
+
+- If the pg_store_plans extension was installed together with Tantor PipelineDB,
+  it could result in combiner failures when processing query execution plans
+  created by PipelineDB for internal purposes. Fixed by configuring
+  pg_store_plans to avoid examining execution plans created by PipelineDB
+  background workers (GL-35, GL-36).
+- If Time-To-Live option was configured for partitioned CVs with some partitions
+  converted to Hydra Columnar, the repear processes could end up in a broken
+  state when deleting tuples from Columnar partitions. Fixed by disabling the
+  TTL feature for partitioned CVs until partition-aware reaper functionality is
+  implemented in a later release (GL-34).
+- README.md is now up-to-date.
+
+## [1.3.3] - 2024-12-24
+
+### Fixed
+
+- PostgreSQL 15.9 / 16.4 introduced an incompatible change resulting in the
+"missing lock for relation" warning message printed in the log during ALTER VIEW
+or ALTER SCHEMA commands in cassert-enabled PipelineDB builds when CVs were
+involved (GL-12).
+- Typo in 1.3.1 -> 1.3.2 extension upgrade script name.
+
+## [1.3.2] - 2024-12-05
+
+### Added
+
+- New GUC `pipelinedb.index_fillfactor` controls fillfactor for automatically
+  created indexes for CV materialized relations. This applies to both
+  partitioned and regular CVs (GL-15).
+
+## [1.3.1] - 2024-11-20
+
+### Fixed
+
+- The `pipelinedb.fillfactor` GUC did not work for partitioned CVs (GL-14).
+- For partitioned CVs with aggregates, combiner processes could sometimes add
+  new tuples with instead of updating existing ones (GL-17).
+- Combiner processes could leak memory, if a partitioned CV update failed with
+  an error for whatever reasons (GL-18).
+- Converting a partition of a partitioned CV to Hydra Columnar could fail with
+  the "could not open relation with OID" error.
+- After converting a partition of a partitioned CV to Hydra Columnar combiner
+  processes cound end up in a broken state, requiring a restart to continue
+  processing data (GL-20).
+
+### Removed
+
+- The "anonymous update checks" functionality that would periodically check for
+  PipelineDB updates in the background and provide anonymized statistics at
+  the same time (GL-16).
+
+## [1.3.0] - 2024-11-12
+
+This is the first formal Tantor release.
+
+### Added
+
+- Support for PostgreSQL 15 / 16.
+- Support for partitioned continuous views.
+- Support for converting CV partitions to other table access methods such as
+  Hydra Columnar.
+
+### Fixed
+
+- A number of memory management and functionality bugs revealed by
+  AddressSanitizer and UndefinedBehaviorSanitizer.
+
+## [1.0.0-13] - 2019-02-05
+
+This was the last release from [pipelinedb.com](https://www.pipelinedb.com) ([GitHub](https://github.com/pipelinedb/pipelinedb)).
+
+[unreleased]: https://github.com/TantorLabs/pipelinedb/compare/1.4.4-REL_19...REL_19_STABLE
+[1.4.4]: https://github.com/TantorLabs/pipelinedb/tree/1.4.4-REL_19
+[1.4.3]: https://github.com/TantorLabs/pipelinedb/tree/1.4.3-REL_18
+[1.4.2]: https://github.com/TantorLabs/pipelinedb/tree/1.4.2-REL_18
+[1.4.1]: https://github.com/TantorLabs/pipelinedb/tree/1.4.1-REL_18
+[1.4.0]: https://github.com/TantorLabs/pipelinedb/tree/1.4.0-REL_18
+[1.3.5]: https://github.com/TantorLabs/pipelinedb/tree/1.3.5-REL_18
+[1.3.4]: https://github.com/TantorLabs/pipelinedb/tree/1.3.4-REL_17
+[1.0.0-13]: https://github.com/pipelinedb/pipelinedb/tree/1.0.0-13

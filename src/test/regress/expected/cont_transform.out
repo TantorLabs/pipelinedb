@@ -1,0 +1,247 @@
+CREATE FOREIGN TABLE ct_stream0 (x int) SERVER pipelinedb;
+CREATE FOREIGN TABLE ct_stream1 (x int) SERVER pipelinedb;
+CREATE VIEW ct0 AS SELECT x::int, count(*) FROM ct_stream0 GROUP BY x;
+CREATE VIEW ct1 WITH (action=transform, outputfunc=pipelinedb.insert_into_stream('ct_stream0')) AS SELECT x::int % 4 AS x FROM ct_stream1 WHERE x > 10 AND x < 50;
+CREATE TABLE ct2 (x int);
+CREATE OR REPLACE FUNCTION ct_tg()
+RETURNS trigger AS
+$$
+BEGIN
+ INSERT INTO ct2 (x) VALUES (NEW.x);
+ RETURN NEW;
+END;
+$$
+LANGUAGE plpgsql;
+CREATE VIEW ct3 WITH (action=transform, outputfunc=ct_tg) AS SELECT x::int FROM ct_stream1 WHERE x % 2 = 0;
+INSERT INTO ct_stream1 (x) SELECT generate_series(0, 100) AS x;
+SELECT * FROM ct0 ORDER BY x;
+ x | count 
+---+-------
+ 0 |    10
+ 1 |    10
+ 2 |     9
+ 3 |    10
+(4 rows)
+
+SELECT * FROM ct2 ORDER BY x;
+  x  
+-----
+   0
+   2
+   4
+   6
+   8
+  10
+  12
+  14
+  16
+  18
+  20
+  22
+  24
+  26
+  28
+  30
+  32
+  34
+  36
+  38
+  40
+  42
+  44
+  46
+  48
+  50
+  52
+  54
+  56
+  58
+  60
+  62
+  64
+  66
+  68
+  70
+  72
+  74
+  76
+  78
+  80
+  82
+  84
+  86
+  88
+  90
+  92
+  94
+  96
+  98
+ 100
+(51 rows)
+
+DROP FUNCTION ct_tg() CASCADE;
+NOTICE:  drop cascades to view ct3
+DROP TABLE ct2;
+DROP VIEW ct1;
+DROP VIEW ct0;
+DROP FOREIGN TABLE ct_stream0;
+DROP FOREIGN TABLE ct_stream1;
+-- Stream-table JOIN
+CREATE TABLE ct_t (x integer, s text);
+INSERT INTO ct_t (x, s) VALUES (0, 'zero');
+INSERT INTO ct_t (x, s) VALUES (1, 'one');
+CREATE FOREIGN TABLE ct_s0 (x text) SERVER pipelinedb;
+CREATE FOREIGN TABLE ct_s1 (x int) SERVER pipelinedb;
+CREATE VIEW ct_v AS SELECT x::text FROM ct_s0;
+CREATE VIEW ct WITH (action=transform, outputfunc=pipelinedb.insert_into_stream('ct_s0')) AS
+  SELECT t.s AS x FROM ct_s1 s JOIN ct_t t on t.x = s.x::integer;
+NOTICE:  consider creating an index on t.x for improved stream-table join performance
+INSERT INTO ct_s1 (x) VALUES (0), (1);
+INSERT INTO ct_s1 (x) VALUES (0), (2);
+SELECT * FROM ct_v ORDER BY x;
+  x   
+------
+ one
+ zero
+ zero
+(3 rows)
+
+DROP VIEW ct;
+DROP VIEW ct_v;
+DROP TABLE ct_t;
+DROP FOREIGN TABLE ct_s1;
+DROP FOREIGN TABLE ct_s0;
+CREATE FOREIGN TABLE ct_s (x int, y text) SERVER pipelinedb;
+CREATE VIEW ct_invalid WITH (action=transform, outputfunc=pipelinedb.insert_into_stream('ct_s')) AS SELECT y, x FROM ct_s;
+ERROR:  "ct_s" must have the same schema as the transform
+CREATE VIEW ct_invalid WITH (action=transform, outputfunc=pipelinedb.insert_into_stream('ct_s')) AS SELECT x, x AS y FROM ct_s;
+ERROR:  "ct_s" must have the same schema as the transform
+CREATE VIEW ct_valid WITH (action=transform, outputfunc=pipelinedb.insert_into_stream('ct_s')) AS SELECT x, 'a'::text FROM ct_s;
+DROP FOREIGN TABLE ct_s CASCADE;
+NOTICE:  drop cascades to view ct_valid
+CREATE FOREIGN TABLE ct_s0 (x int) SERVER pipelinedb;
+CREATE FOREIGN TABLE ct_s1 (x int) SERVER pipelinedb;
+CREATE VIEW ct_t WITH (action=transform, outputfunc=pipelinedb.insert_into_stream('ct_s1')) AS SELECT x % 4 AS x FROM ct_s0;
+CREATE VIEW ct_v0 AS SELECT x FROM ct_s1;
+CREATE VIEW ct_v1 AS SELECT x FROM output_of('ct_t');
+INSERT INTO ct_s0 SELECT generate_series(1, 10) x;
+SELECT * FROM ct_v0;
+ x 
+---
+ 1
+ 2
+ 3
+ 0
+ 1
+ 2
+ 3
+ 0
+ 1
+ 2
+(10 rows)
+
+SELECT * FROM ct_v1;
+ x 
+---
+ 1
+ 2
+ 3
+ 0
+ 1
+ 2
+ 3
+ 0
+ 1
+ 2
+(10 rows)
+
+CREATE VIEW ct_ostream WITH (action=transform) AS SELECT 1 AS a, 2 AS b, 3 AS c, x + 42 AS d FROM ct_s1;
+DROP FOREIGN TABLE ct_s0 CASCADE;
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  drop cascades to view ct_t
+drop cascades to view ct_v1
+DROP FOREIGN TABLE ct_s1 CASCADE;
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  drop cascades to view ct_v0
+drop cascades to view ct_ostream
+CREATE FOREIGN TABLE fanout (x integer) SERVER pipelinedb;
+CREATE VIEW fanout0 WITH (action=transform) AS SELECT generate_series(1, 2) FROM fanout;
+CREATE VIEW fanout1 WITH (action=transform) AS SELECT generate_series(1, 2) FROM output_of('fanout0');
+CREATE VIEW fanout2 WITH (action=transform) AS SELECT generate_series(1, 2) FROM output_of('fanout1');
+CREATE VIEW fanout3 WITH (action=transform) AS SELECT generate_series(1, 2) FROM output_of('fanout2');
+CREATE VIEW fanout4 WITH (action=transform) AS SELECT generate_series(1, 2) FROM output_of('fanout3');
+CREATE VIEW fanout5 WITH (action=transform) AS SELECT generate_series(1, 2) FROM output_of('fanout4');
+CREATE VIEW fanout6 WITH (action=transform) AS SELECT generate_series(1, 2) FROM output_of('fanout5');
+CREATE VIEW fanout7 WITH (action=transform) AS SELECT generate_series(1, 2) FROM output_of('fanout6');
+CREATE VIEW fanout8 WITH (action=transform) AS SELECT generate_series(1, 2) FROM output_of('fanout7');
+CREATE VIEW fanout9 WITH (action=transform) AS SELECT generate_series(1, 2) FROM output_of('fanout8');
+CREATE VIEW fanout10 WITH (action=transform) AS SELECT generate_series(1, 2) FROM output_of('fanout9');
+CREATE VIEW fanout11 AS SELECT count(*) FROM output_of('fanout10');
+INSERT INTO fanout (x) VALUES (0);
+SELECT * FROM fanout11;
+ count 
+-------
+  2048
+(1 row)
+
+INSERT INTO fanout (x) VALUES (0);
+SELECT * FROM fanout11;
+ count 
+-------
+  4096
+(1 row)
+
+INSERT INTO fanout (x) VALUES (0);
+SELECT * FROM fanout11;
+ count 
+-------
+  6144
+(1 row)
+
+DROP FOREIGN TABLE fanout CASCADE;
+NOTICE:  drop cascades to 12 other objects
+DETAIL:  drop cascades to view fanout0
+drop cascades to view fanout1
+drop cascades to view fanout2
+drop cascades to view fanout3
+drop cascades to view fanout4
+drop cascades to view fanout5
+drop cascades to view fanout6
+drop cascades to view fanout7
+drop cascades to view fanout8
+drop cascades to view fanout9
+drop cascades to view fanout10
+drop cascades to view fanout11
+CREATE FOREIGN TABLE ct_a (n int) SERVER pipelinedb;
+CREATE FOREIGN TABLE ct_b (n int) SERVER pipelinedb;
+CREATE VIEW ct_stream_insert0 AS SELECT n FROM ct_b;
+CREATE SCHEMA test_cont_transform;
+CREATE FUNCTION test_cont_transform.insert_into_b () RETURNS TRIGGER AS
+$$
+BEGIN
+  INSERT INTO ct_b VALUES (NEW.n);
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+CREATE VIEW ct_stream_insert1 WITH (action=transform, outputfunc=test_cont_transform.insert_into_b) AS
+SELECT n FROM ct_a;
+INSERT INTO ct_a SELECT generate_series(1, 100);
+INSERT INTO ct_a SELECT generate_series(1, 100);
+SELECT pg_sleep(1);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+SELECT count(*) FROM ct_stream_insert0;
+ count 
+-------
+   200
+(1 row)
+
+DROP FUNCTION test_cont_transform.insert_into_b() CASCADE;
+NOTICE:  drop cascades to view ct_stream_insert1
+DROP SCHEMA test_cont_transform;
+DROP FOREIGN TABLE ct_b CASCADE;
+NOTICE:  drop cascades to view ct_stream_insert0
+DROP FOREIGN TABLE ct_a;

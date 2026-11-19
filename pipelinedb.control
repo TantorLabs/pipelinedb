@@ -1,0 +1,9 @@
+# PipelineDB extension
+comment = 'PipelineDB'
+default_version = '1.4.4'
+module_pathname = '$libdir/pipelinedb'
+relocatable = true
+
+# PostgreSQL major version this branch builds against. Read by the Makefile and
+# CI; kept in a comment because PostgreSQL rejects unknown control parameters.
+# pg_major = 19

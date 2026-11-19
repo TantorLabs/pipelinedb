@@ -1,0 +1,134 @@
+CREATE FOREIGN TABLE sw_vacuum_stream (key text) SERVER pipelinedb;
+CREATE VIEW sw_vacuum AS SELECT key, COUNT(*) FROM sw_vacuum_stream WHERE arrival_timestamp > clock_timestamp() - interval '3 second' GROUP BY key;
+INSERT INTO sw_vacuum_stream (key) VALUES ('a'), ('b'), ('c');
+INSERT INTO sw_vacuum_stream (key) VALUES ('a'), ('b'), ('c');
+SELECT pg_sleep(1);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+INSERT INTO sw_vacuum_stream (key) VALUES ('a'), ('b'), ('c');
+INSERT INTO sw_vacuum_stream (key) VALUES ('a'), ('b'), ('c');
+SELECT * FROM sw_vacuum ORDER BY key;
+ key | count 
+-----+-------
+ a   |     4
+ b   |     4
+ c   |     4
+(3 rows)
+
+-- Just verify that the mrel has more rows, as we can't gaurantee which time bucket the
+-- rows will fall in which makes it tricky to compare this result to a predetermined result
+SELECT (SELECT COUNT(*) FROM sw_vacuum) < (SELECT COUNT(*) FROM sw_vacuum_mrel);
+ ?column? 
+----------
+ t
+(1 row)
+
+SELECT DISTINCT key FROM sw_vacuum_mrel ORDER BY key;
+ key 
+-----
+ a
+ b
+ c
+(3 rows)
+
+SELECT pg_sleep(3);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+SELECT 0 * pipelinedb.ttl_expire('sw_vacuum');
+ ?column? 
+----------
+        0
+(1 row)
+
+SELECT * FROM sw_vacuum ORDER BY key;
+ key | count 
+-----+-------
+(0 rows)
+
+SELECT key, SUM(count) FROM sw_vacuum_mrel GROUP BY key ORDER BY key;
+ key | sum 
+-----+-----
+(0 rows)
+
+INSERT INTO sw_vacuum_stream (key) VALUES ('a'), ('b'), ('c');
+SELECT pg_sleep(1);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+INSERT INTO sw_vacuum_stream (key) VALUES ('a'), ('b'), ('c');
+SELECT * FROM sw_vacuum ORDER BY key;
+ key | count 
+-----+-------
+ a   |     2
+ b   |     2
+ c   |     2
+(3 rows)
+
+SELECT (SELECT COUNT(*) FROM sw_vacuum) < (SELECT COUNT(*) FROM sw_vacuum_mrel);
+ ?column? 
+----------
+ t
+(1 row)
+
+SELECT DISTINCT key FROM sw_vacuum_mrel ORDER BY key;
+ key 
+-----
+ a
+ b
+ c
+(3 rows)
+
+SELECT 0 * pipelinedb.ttl_expire('sw_vacuum');
+ ?column? 
+----------
+        0
+(1 row)
+
+SELECT * FROM sw_vacuum ORDER BY key;
+ key | count 
+-----+-------
+ a   |     2
+ b   |     2
+ c   |     2
+(3 rows)
+
+SELECT key, SUM(count) FROM sw_vacuum_mrel GROUP BY key ORDER BY key;
+ key | sum 
+-----+-----
+ a   |   2
+ b   |   2
+ c   |   2
+(3 rows)
+
+SELECT pg_sleep(3);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+SELECT 0 * pipelinedb.ttl_expire('sw_vacuum');
+ ?column? 
+----------
+        0
+(1 row)
+
+SELECT * FROM sw_vacuum ORDER BY key;
+ key | count 
+-----+-------
+(0 rows)
+
+SELECT key, SUM(count) FROM sw_vacuum_mrel GROUP BY key ORDER BY key;
+ key | sum 
+-----+-----
+(0 rows)
+
+DROP FOREIGN TABLE sw_vacuum_stream CASCADE;
+NOTICE:  drop cascades to view sw_vacuum

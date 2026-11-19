@@ -1,0 +1,516 @@
+/*-------------------------------------------------------------------------
+ *
+ * worker.c
+ *
+ * Copyright (c) 2018, PipelineDB, Inc.
+ *
+ *-------------------------------------------------------------------------
+ */
+#include "postgres.h"
+
+#include "access/htup_details.h"
+#include "access/xact.h"
+#include "access/relation.h"
+#include "access/table.h"
+#include "pipeline_query.h"
+#include "executor/execdesc.h"
+#include "executor/executor.h"
+#include "executor/tstoreReceiver.h"
+#include "miscadmin.h"
+#include "nodes/makefuncs.h"
+#include "pgstat.h"
+#include "combiner_receiver.h"
+#include "executor.h"
+#include "planner.h"
+#include "scheduler.h"
+#include "matrel.h"
+#include "stats.h"
+#include "stream_fdw.h"
+#include "pipeline_stream.h"
+#include "rewrite/rewriteHandler.h"
+#include "transform_receiver.h"
+#include "storage/ipc.h"
+#include "tcop/dest.h"
+#include "utils/builtins.h"
+#include "utils/hsearch.h"
+#include "utils/memutils.h"
+#include "utils/resowner.h"
+#include "utils/snapmgr.h"
+
+static ResourceOwner WorkerResOwner = NULL;
+
+typedef struct {
+	ContQueryState base;
+	DestReceiver *dest;
+	BatchReceiver *receiver;
+	QueryDesc *query_desc;
+	AttrNumber *groupatts;
+	FuncExpr *hashfunc;
+	Tuplestorestate *plan_output;
+	TupleTableSlot *result_slot;
+} ContQueryWorkerState;
+
+/*
+ * set_cont_executor
+ */
+static void
+set_cont_executor(PlanState *planstate, ContExecutor *exec)
+{
+	if (planstate == NULL)
+		return;
+
+	if (IsA(planstate, ForeignScanState))
+	{
+		ForeignScanState *fss = (ForeignScanState *) planstate;
+		if (RelidIsStream(RelationGetRelid(fss->ss.ss_currentRelation)))
+		{
+			StreamScanState *scan = (StreamScanState *) fss->fdw_state;
+			scan->cont_executor = exec;
+		}
+
+		return;
+	}
+	else if (IsA(planstate, SubqueryScanState))
+	{
+		set_cont_executor(((SubqueryScanState *) planstate)->subplan, exec);
+		return;
+	}
+
+	set_cont_executor(planstate->lefttree, exec);
+	set_cont_executor(planstate->righttree, exec);
+}
+
+/*
+ * forget_executor_state
+ *
+ * Plans are initialized and ended for each execution, so the executor
+ * structures referenced by the QueryDesc must not outlive their EState.
+ */
+static void
+forget_executor_state(QueryDesc *query_desc)
+{
+	query_desc->estate = NULL;
+	query_desc->planstate = NULL;
+	query_desc->tupDesc = NULL;
+	query_desc->query_instr = NULL;
+}
+
+/*
+ * init_query_state
+ */
+static ContQueryState *
+init_query_state(ContExecutor *exec, ContQueryState *base)
+{
+	PlannedStmt *pstmt;
+	ContQueryWorkerState *state;
+	ResourceOwner res;
+
+	res = CurrentResourceOwner;
+	CurrentResourceOwner = WorkerResOwner;
+
+	state = (ContQueryWorkerState *) palloc0(sizeof(ContQueryWorkerState));
+	memcpy(&state->base, base, sizeof(ContQueryState));
+	pfree(base);
+	base = (ContQueryState *) state;
+
+	/* Each plan execution's output on a microbatch is buffered in a tuplestore */
+	state->dest = CreateDestReceiver(DestTuplestore);
+	state->plan_output = tuplestore_begin_heap(false, false, continuous_query_batch_mem);
+	SetTuplestoreDestReceiverParams(state->dest, state->plan_output,
+									CurrentMemoryContext, false, NULL, NULL);
+
+	/*
+	 * Now create the receivers, which send the buffered plan output down the processing pipeline
+	 */
+	if (base->query->type == CONT_VIEW)
+		state->receiver = CreateCombinerReceiver(exec, base->query, state->plan_output);
+	else
+		state->receiver = CreateTransformReceiver(exec, base->query, state->plan_output);
+
+	pstmt = GetContPlan(base->query, Worker);
+
+	state->query_desc = CreateQueryDesc(pstmt, state->base.query->sql,
+										InvalidSnapshot, InvalidSnapshot,
+										state->dest, NULL, NULL, 0);
+
+	PushActiveSnapshot(GetTransactionSnapshot());
+
+	state->query_desc->snapshot = GetActiveSnapshot();
+	RegisterSnapshotOnOwner(state->query_desc->snapshot, WorkerResOwner);
+
+	ExecutorStart(state->query_desc, PIPELINE_EXEC_CONTINUOUS);
+
+	state->query_desc->snapshot->active_count++;
+	UnregisterSnapshotFromOwner(state->query_desc->snapshot, WorkerResOwner);
+	UnregisterSnapshotFromOwner(state->query_desc->estate->es_snapshot, WorkerResOwner);
+	state->query_desc->snapshot = NULL;
+
+	PopActiveSnapshot();
+
+	/* process/query level statistics */
+	state->base.stats = ProcStatsInit(state->base.query->id, MyProcPid);
+	MyProcStatCQEntry = state->base.stats;
+
+	if (IsA(state->query_desc->plannedstmt->planTree, Agg))
+	{
+		Agg *agg = (Agg *) state->query_desc->plannedstmt->planTree;
+		Relation matrel;
+		ResultRelInfo *ri;
+
+		state->groupatts = agg->grpColIdx;
+
+		matrel = try_relation_open(base->query->matrelid, AccessShareLock);
+
+		if (matrel == NULL)
+		{
+			base->query = NULL;
+			return base;
+		}
+
+		ri = CQMatRelOpen(matrel);
+
+		if (agg->numCols)
+		{
+			FuncExpr *hash = GetGroupHashIndexExpr(ri);
+			if (hash == NULL)
+			{
+				/* matrel has been dropped */
+				base->query = NULL;
+				CQMatRelClose(ri);
+				relation_close(matrel, NoLock);
+				return base;
+			}
+
+			Assert(base->query->type == CONT_VIEW);
+			SetCombinerDestReceiverHashFunc(state->receiver, hash);
+		}
+
+		CQMatRelClose(ri);
+		relation_close(matrel, NoLock);
+	}
+
+	(*state->dest->rStartup) (state->dest, state->query_desc->operation, state->query_desc->tupDesc);
+
+	/*
+	 * The main loop initializes and ends plans across plan executions, so it expects
+	 * the plan to be uninitialized
+	 */
+	ExecEndNode(state->query_desc->planstate);
+	FreeExecutorState(state->query_desc->estate);
+	forget_executor_state(state->query_desc);
+
+	CurrentResourceOwner = res;
+
+	return base;
+}
+
+/*
+ * flush_tuples
+ */
+static void
+flush_tuples(ContQueryWorkerState *state)
+{
+	state->receiver->flush(state->receiver, state->result_slot);
+	/*
+	 * If our output store did not spill anything to disk, all allocated memory will be properly free'd
+	 * at end-of-transaction. But if it did spill to disk we must explicitly clear it here in order
+	 * to clean up its associated temporary files.
+	 */
+	tuplestore_clear(state->plan_output);
+}
+
+#if (PG_VERSION_NUM / 100 != 1900)
+#error init_plan() is a trimmed down copy of InitPlan() from the Postgres \
+	source code. You may want to update it.
+#endif
+
+/*
+ * init_plan
+ */
+static void
+init_plan(ContQueryWorkerState *state)
+{
+	QueryDesc *queryDesc = state->query_desc;
+	PlannedStmt *plannedstmt = queryDesc->plannedstmt;
+	Plan *plan = queryDesc->plannedstmt->planTree;
+	List	   *rangeTable = plannedstmt->rtable;
+	EState	   *estate = queryDesc->estate;
+	PlanState  *planstate;
+	TupleDesc	tupType;
+	ListCell *lc;
+
+	/*
+	 * Do permissions checks
+	 */
+	ExecCheckPermissions(rangeTable, plannedstmt->permInfos, true);
+
+	/*
+	 * initialize the node's execution state
+	 */
+	ExecInitRangeTable(estate, rangeTable, plannedstmt->permInfos,
+					   bms_copy(plannedstmt->unprunableRelids));
+
+	estate->es_plannedstmt = plannedstmt;
+	estate->es_part_prune_infos = plannedstmt->partPruneInfos;
+
+	foreach(lc, plannedstmt->subplans)
+	{
+		Plan *subplan = (Plan *) lfirst(lc);
+		PlanState  *subplanstate;
+
+		subplanstate = ExecInitNode(subplan, estate, PIPELINE_EXEC_CONTINUOUS);
+		estate->es_subplanstates = lappend(estate->es_subplanstates, subplanstate);
+	}
+
+	/*
+	 * Initialize the private state information for all the nodes in the query
+	 * tree.  This opens files, allocates storage and leaves us ready to start
+	 * processing tuples.
+	 */
+	planstate = ExecInitNode(plan, estate, PIPELINE_EXEC_CONTINUOUS);
+
+	/*
+	 * Get the tuple descriptor describing the type of tuples to return.
+	 */
+	tupType = ExecGetResultType(planstate);
+
+	queryDesc->tupDesc = tupType;
+	queryDesc->planstate = planstate;
+
+	state->result_slot = MakeSingleTupleTableSlot(queryDesc->tupDesc, &TTSOpsMinimalTuple);
+	tuplestore_clear(state->plan_output);
+}
+
+/*
+ * cleanup_worker_state
+ */
+static bool
+cleanup_worker_state(ContQueryWorkerState *state)
+{
+	QueryDesc *query_desc = state->query_desc;
+	MemoryContext oldcxt = CurrentMemoryContext;
+	EState *estate;
+	volatile bool snapshot_pushed = false;
+	volatile bool result = false;
+
+	/*
+	 * We wrap this in a separate try/catch block because ExecInitNode call can potentially throw
+	 * an error if the state was for a stream-table join and the table has been dropped.
+	 */
+	PG_TRY();
+	{
+		(*state->dest->rShutdown) (state->dest);
+
+		forget_executor_state(query_desc);
+
+		estate = CreateEState(query_desc);
+		query_desc->estate = estate;
+		SetEStateSnapshot(estate);
+		snapshot_pushed = true;
+
+		/* The cleanup functions below expect these things to be registered. */
+		RegisterSnapshotOnOwner(estate->es_snapshot, WorkerResOwner);
+		RegisterSnapshotOnOwner(query_desc->snapshot, WorkerResOwner);
+
+		CurrentResourceOwner = WorkerResOwner;
+
+		AcquireExecutorLocks(list_make1(query_desc->plannedstmt), true);
+		init_plan(state);
+
+		/* Clean up. ExecutorEnd() frees estate. */
+		ExecutorFinish(query_desc);
+		ExecutorEnd(query_desc);
+		PopActiveSnapshot();
+		snapshot_pushed = false;
+
+		FreeQueryDesc(query_desc);
+	}
+	PG_CATCH();
+	{
+		ErrorData *edata;
+
+		/*
+		 * If this happens, it almost certainly means that a stream or table has been dropped
+		 * and no longer exists, even though the ended plan may have references to them. We're
+		 * not doing anything particularly critical in the above TRY block, so just log these
+		 * errors without failing.
+		 */
+		MemoryContextSwitchTo(oldcxt);
+		edata = CopyErrorData();
+		FlushErrorState();
+
+		ereport(LOG,
+				(errmsg("could not clean up continuous query \"%s\": %s",
+						state->base.query->name->relname, edata->message)));
+		FreeErrorData(edata);
+
+		if (snapshot_pushed && ActiveSnapshotSet())
+			PopActiveSnapshot();
+
+		result = true;
+	}
+	PG_END_TRY();
+
+	return result;
+}
+
+/*
+ * should_exec_query
+ */
+static bool
+should_exec_query(ContQuery *query)
+{
+	Bitmapset *readers;
+
+	if (query->type != CONT_TRANSFORM)
+		return true;
+
+	/*
+	 * If it's a transform with no trigger function and no output stream readers,
+	 * it's a noop
+	 */
+	readers = GetAllStreamReaders(query->osrelid);
+
+	if (!OidIsValid(query->tgfn) && bms_is_empty(readers))
+		return false;
+
+	return true;
+}
+
+/*
+ * ContinuousQueryWorkerMain
+ */
+void
+ContinuousQueryWorkerMain(void)
+{
+	ContExecutor *cont_exec = ContExecutorNew(&init_query_state);
+	Oid query_id;
+	bool errs;
+
+	WorkerResOwner = ResourceOwnerCreate(NULL, "WorkerResOwner");
+
+	/* Workers never perform any writes, so only need read only transactions. */
+	XactReadOnly = true;
+
+	for (;;)
+	{
+		CHECK_FOR_INTERRUPTS();
+
+		if (get_sigterm_flag())
+			break;
+
+		ContExecutorStartBatch(cont_exec, 0);
+
+		while ((query_id = ContExecutorStartNextQuery(cont_exec, 0)) != InvalidOid)
+		{
+			volatile EState *estate = NULL;
+			ContQueryWorkerState *state = (ContQueryWorkerState *) cont_exec->curr_query;
+			volatile bool error = false;
+
+			PG_TRY();
+			{
+				if (state == NULL)
+					goto next;
+
+				MemoryContextSwitchTo(state->base.tmp_cxt);
+
+				estate = CreateEState(state->query_desc);
+				state->query_desc->estate = (EState *) estate;
+				SetEStateSnapshot((EState *) estate);
+
+				if (should_exec_query(state->base.query))
+				{
+					TimestampTz start_time = GetCurrentTimestamp();
+					long secs;
+					int usecs;
+
+					AcquireExecutorLocks(
+						list_make1(state->query_desc->plannedstmt), true);
+
+					/* initialize the plan for execution within this xact */
+					init_plan(state);
+					set_cont_executor(state->query_desc->planstate, cont_exec);
+
+					ExecuteContPlan((EState *) estate, state->query_desc->planstate, true, state->query_desc->operation,
+							true, 0, ForwardScanDirection, state->dest, true);
+
+					/* free up any resources used by this plan before committing */
+					end_plan(state->query_desc);
+
+					/* flush tuples to combiners or transform out functions */
+					flush_tuples(state);
+
+					/* record execution time */
+					TimestampDifference(start_time, GetCurrentTimestamp(), &secs, &usecs);
+					StatsIncrementCQExecMs(secs * 1000 + (usecs / 1000));
+				}
+
+				UnsetEStateSnapshot((EState *) estate);
+				FreeExecutorState((EState *) estate);
+				forget_executor_state(state->query_desc);
+				estate = NULL;
+
+				MemoryContextReset(state->base.tmp_cxt);
+				MemoryContextSwitchTo(state->base.state_cxt);
+			}
+			PG_CATCH();
+			{
+				EmitErrorReport();
+				FlushErrorState();
+
+				if (estate && ActiveSnapshotSet())
+					UnsetEStateSnapshot((EState *) estate);
+
+				/*
+				 * Modifying anything within a PG_CATCH block can have unpredictable behavior
+				 * when optimization is enabled, so we do the remaining error handling later.
+				 */
+				error = true;
+			}
+			PG_END_TRY();
+
+			if (error)
+			{
+				/* The failed execution's EState is abandoned along with the transaction */
+				forget_executor_state(state->query_desc);
+				ContExecutorAbortQuery(cont_exec);
+				StatsIncrementCQError(1);
+			}
+
+next:
+			ContExecutorEndQuery(cont_exec);
+
+			/*
+			 * We wait to purge until we're done incrementing all stats, because this will
+			 * free the stats object
+			 */
+			if (error)
+				ContExecutorPurgeQuery(cont_exec);
+		}
+
+		ContExecutorEndBatch(cont_exec, true);
+	}
+
+	StartTransactionCommand();
+	errs = false;
+
+	for (query_id = 0; query_id < MAX_CQS; query_id++)
+	{
+		ContQueryWorkerState *state = (ContQueryWorkerState *) cont_exec->states[query_id];
+
+		if (state == NULL)
+			continue;
+
+		MyProcStatCQEntry = state->base.stats;
+		errs |= cleanup_worker_state(state);
+		MemoryContextDelete(state->base.state_cxt);
+	}
+
+	if (errs)
+		AbortCurrentTransaction();
+	else
+		CommitTransactionCommand();
+
+	MemoryContextSwitchTo(TopMemoryContext);
+	ContExecutorDestroy(cont_exec);
+}
