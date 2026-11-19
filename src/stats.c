@@ -19,6 +19,11 @@
 #include "utils/builtins.h"
 #include "utils/hsearch.h"
 
+#define PROC_STATS_INIT_SIZE (4 * NUM_BG_WORKERS_PER_DB)
+#define PROC_STATS_MAX_SIZE (32 * PROC_STATS_INIT_SIZE)
+#define STREAM_STATS_INIT_SIZE 32
+#define STREAM_STATS_MAX_SIZE 1024
+
 static HTAB *proc_stats = NULL;
 static HTAB *stream_stats = NULL;
 
@@ -37,33 +42,16 @@ PipelineStatsRequestLWLocks(void)
 /*
  * PipelineStatsShmemSize
  *
- * Start off with some rough estimations of each hashtable's size,
- * we'll grow them as necessary
+ * Shared memory hash tables grow into memory that must already be reserved,
+ * so reserve enough for each table's maximum size
  */
 Size
 PipelineStatsShmemSize(void)
 {
 	Size size = 0;
 
-	/*
-	 * proc_stats
-	 */
-	size = add_size(size, hash_estimate_size(4 * NUM_BG_WORKERS_PER_DB, sizeof(ProcStatsEntry)));
-
-	/*
-	 * query_stats
-	 */
-	size = add_size(size, hash_estimate_size(32, sizeof(ProcStatsEntry)));
-
-	/*
-	 * stream_stats
-	 */
-	size = add_size(size, hash_estimate_size(16, sizeof(ProcStatsEntry)));
-
-	/*
-	 * db_stats
-	 */
-	size = add_size(size, hash_estimate_size(4, sizeof(ProcStatsEntry)));
+	size = add_size(size, hash_estimate_size(PROC_STATS_MAX_SIZE, sizeof(ProcStatsEntry)));
+	size = add_size(size, hash_estimate_size(STREAM_STATS_MAX_SIZE, sizeof(StreamStatsEntry)));
 
 	return size;
 }
@@ -83,14 +71,14 @@ PipelineStatsShmemInit(void)
 	ctl.keysize = sizeof(ProcStatsKey);
 	ctl.entrysize = sizeof(ProcStatsEntry);
 
-	proc_stats = ShmemInitHash("proc_stats", 4 * NUM_BG_WORKERS_PER_DB, 32 * 4 * NUM_BG_WORKERS_PER_DB, &ctl, HASH_ELEM | HASH_BLOBS);
+	proc_stats = ShmemInitHash("proc_stats", PROC_STATS_INIT_SIZE, PROC_STATS_MAX_SIZE, &ctl, HASH_ELEM | HASH_BLOBS);
 
 	MemSet(&ctl, 0, sizeof(HASHCTL));
 
 	ctl.keysize = sizeof(StreamStatsKey);
 	ctl.entrysize = sizeof(StreamStatsEntry);
 
-	stream_stats = ShmemInitHash("stream_stats", 32, 1024, &ctl, HASH_ELEM | HASH_BLOBS);
+	stream_stats = ShmemInitHash("stream_stats", STREAM_STATS_INIT_SIZE, STREAM_STATS_MAX_SIZE, &ctl, HASH_ELEM | HASH_BLOBS);
 
 	LWLockRelease(AddinShmemInitLock);
 }

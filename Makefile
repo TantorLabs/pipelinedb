@@ -4,9 +4,12 @@ EXTVERSION = $(shell grep default_version $(MODULE_big).control | \
 EXTREVISION = $(shell git rev-parse --short HEAD 2>/dev/null || \
                grep commit_sha $(MODULE_big).control | \
                sed -e "s/commit_sha[[:space:]]*=[[:space:]]*'\([^']*\)'/\1/")
+PG_MAJOR = $(shell sed -n -e 's/^\#[[:space:]]*pg_major[[:space:]]*=[[:space:]]*\([0-9][0-9]*\).*/\1/p' \
+               $(MODULE_big).control)
 
 PG_CPPFLAGS += -DPIPELINE_VERSION_STR=\"$(EXTVERSION)\"
 PG_CPPFLAGS += -DPIPELINE_REVISION_STR=\"$(EXTREVISION)\"
+PG_CPPFLAGS += -DPIPELINE_PG_MAJOR=$(PG_MAJOR)
 
 SOURCES = $(shell find src -type f -name '*.c' -not -path 'src/test/*')
 OBJS = $(patsubst %.c,%.o,$(SOURCES))

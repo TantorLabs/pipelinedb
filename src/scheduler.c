@@ -172,8 +172,9 @@ void
 ContQuerySchedulerShmemInit(void)
 {
 	bool found;
-	Size size = ContQuerySchedulerShmemSize();
+	Size size = MAXALIGN(sizeof(ContQuerySchedulerShmemStruct));
 
+	/* The db_table hash table is allocated separately below */
 	ContQuerySchedulerShmem = ShmemInitStruct("ContQuerySchedulerShmem", size, &found);
 
 	if (!found)

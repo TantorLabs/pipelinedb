@@ -178,6 +178,15 @@ class PipelineDB(object):
     """
     return any(text in line for line in self.server_log)
 
+  def wait_for_log(self, text, start, timeout=5):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+      if any(text in line for line in self.server_log[start:]):
+        return
+      time.sleep(0.05)
+    pytest.fail('Missing log message %r in:\n%s' %
+        (text, b''.join(self.server_log[start:]).decode('utf-8', 'replace')))
+
   def destroy(self):
     """
     Cleans up resources used by this PipelineDB instance

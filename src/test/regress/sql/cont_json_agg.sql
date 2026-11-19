@@ -133,3 +133,23 @@ DROP FOREIGN TABLE cqobjectagg_stream CASCADE;
 DROP FUNCTION json_to_array(json);
 DROP FUNCTION json_keys_array(json);
 
+-- Cast functions to json must be checked for EXECUTE privilege
+CREATE TYPE json_cast_enum AS ENUM ('a');
+CREATE FUNCTION json_cast_enum_to_json(json_cast_enum) RETURNS json
+  LANGUAGE sql IMMUTABLE AS $$ SELECT to_json($1::text) $$;
+CREATE CAST (json_cast_enum AS json) WITH FUNCTION json_cast_enum_to_json(json_cast_enum);
+REVOKE ALL ON FUNCTION json_cast_enum_to_json(json_cast_enum) FROM PUBLIC;
+CREATE ROLE json_cast_user;
+
+SELECT combinable_json_agg(x) FROM (VALUES ('a'::json_cast_enum)) v(x);
+SELECT combinable_jsonb_agg(x) FROM (VALUES ('a'::json_cast_enum)) v(x);
+
+SET ROLE json_cast_user;
+SELECT combinable_json_agg(x) FROM (VALUES ('a'::json_cast_enum)) v(x);
+SELECT combinable_jsonb_agg(x) FROM (VALUES ('a'::json_cast_enum)) v(x);
+RESET ROLE;
+
+DROP ROLE json_cast_user;
+DROP CAST (json_cast_enum AS json);
+DROP FUNCTION json_cast_enum_to_json(json_cast_enum);
+DROP TYPE json_cast_enum;
